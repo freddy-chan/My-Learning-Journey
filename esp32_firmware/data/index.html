@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>ESP32 Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+
+        h1 {
+            color: #1a73e8;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        #gpioButton {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+
+        #gpioButton:hover {
+            background-color: #1557b0;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            margin-top: 15px;
+        }
+
+        .led {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+            background-color: #ccc;
+        }
+
+        .led.on {
+            background-color: #34a853;
+        }
+
+        .chart-container {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .chart-card {
+            flex: 1;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        canvas {
+            width: 100%;
+            height: 250px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>ESP32 Firmware Dashboard</h1>
+
+    <div class="card">
+        <button onclick="toggleGPIO()" id="gpioButton">Toggle GPIO</button>
+        <div class="status-indicator">
+            <div class="led" id="ledIndicator"></div>
+            <p id="gpioState">State: OFF</p>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <div class="chart-card">
+            <h2>Temperature</h2>
+            <canvas id="temperatureChart"></canvas>
+        </div>
+
+        <div class="chart-card">
+            <h2>Humidity</h2>
+            <canvas id="humidityChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let tempData = [];
+        let humidityData = [];
+        let labels = [];
+        const maxPoints = 10;
+
+        const tempCtx = document.getElementById('temperatureChart').getContext('2d');
+        const temperatureChart = new Chart(tempCtx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Temperature (°C)',
+                    borderColor: '#1a73e8',
+                    backgroundColor: 'rgba(26, 115, 232, 0.2)',
+                    data: tempData,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: false }
+                }
+            }
+        });
+
+        const humidityCtx = document.getElementById('humidityChart').getContext('2d');
+        const humidityChart = new Chart(humidityCtx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Humidity (%)',
+                    borderColor: '#34a853',
+                    backgroundColor: 'rgba(52, 168, 83, 0.2)',
+                    data: humidityData,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: false }
+                }
+            }
+        });
+
+        function updateSensorData() {
+            fetch("/dht")
+                .then(response => response.json())
+                .then(data => {
+                    const now = new Date().toLocaleTimeString();
+                    
+                    if (tempData.length >= maxPoints) {
+                        tempData.shift();
+                        humidityData.shift();
+                        labels.shift();
+                    }
+                    
+                    tempData.push(data.temperature.toFixed(1));
+                    humidityData.push(data.humidity.toFixed(1));
+                    labels.push(now);
+                    
+                    temperatureChart.update();
+                    humidityChart.update();
+                })
+                .catch(error => console.log("Error:", error));
+        }
+
+        setInterval(updateSensorData, 3000);
+        updateSensorData();
+
+        function toggleGPIO() {
+            fetch("/gpio", { method: "POST" })
+                .then(res => res.text())
+                .then(state => {
+                    document.getElementById("gpioState").innerHTML = `State: ${state}`;
+                    const led = document.getElementById("ledIndicator");
+                    led.className = `led ${state.toLowerCase()}`;
+                });
+        }
+    </script>
+</body>
+
+</html>
