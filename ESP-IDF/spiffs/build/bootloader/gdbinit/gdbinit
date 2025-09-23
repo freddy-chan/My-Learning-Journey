@@ -1,0 +1,2 @@
+source C:/tutorials/spiffs/build/bootloader/gdbinit/symbols
+source C:/tutorials/spiffs/build/bootloader/gdbinit/connect

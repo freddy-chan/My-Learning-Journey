@@ -1,0 +1,9 @@
+menu "My LED configuration"
+    config MY_LED_GPIO
+        int "LED GPIO number"
+        default 2
+        help
+            GPIO used for the LED (example default is GPIO2)
+
+endmenu
+        

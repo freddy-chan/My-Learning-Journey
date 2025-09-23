@@ -1,0 +1,83 @@
+
+
+ELF file SHA256: 2e8e19362
+
+Rebooting...
+ets Jul 29 2019 12:21:46
+
+rst:0xc (SW_CPU_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:6380
+ho 0 tail 12 room 4
+load:0x40078000,len:15916
+load:0x40080400,len:3860
+--- 0x40080400: _invalid_pc_placeholder at C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/xtensa_vectors.S:2235
+entry 0x40080638
+I (29) boot: ESP-IDF HEAD-HASH-NOTFOUND 2nd stage bootloader
+I (29) boot: compile time Sep 20 2025 13:46:59
+I (29) boot: Multicore bootloader
+I (32) boot: chip revision: v3.1
+I (34) boot.esp32: SPI Speed      : 40MHz
+I (38) boot.esp32: SPI Mode       : DIO
+I (42) boot.esp32: SPI Flash Size : 2MB
+I (45) boot: Enabling RNG early entropy source...
+I (50) boot: Partition Table:
+I (52) boot: ## Label            Usage          Type ST Offset   Length
+I (59) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (65) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (72) boot:  2 factory          factory app      00 00 00010000 00100000
+I (78) boot: End of partition table
+I (82) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=09a88h ( 39560) map
+I (102) esp_image: segment 1: paddr=00019ab0 vaddr=3ff80000 size=00020h (    32) load
+I (103) esp_image: segment 2: paddr=00019ad8 vaddr=3ffb0000 size=023b8h (  9144) load
+I (110) esp_image: segment 3: paddr=0001be98 vaddr=40080000 size=04180h ( 16768) load
+I (121) esp_image: segment 4: paddr=00020020 vaddr=400d0020 size=1343ch ( 78908) map
+I (148) esp_image: segment 5: paddr=00033464 vaddr=40084180 size=08e8ch ( 36492) load
+I (169) boot: Loaded app from partition at offset 0x10000
+I (169) boot: Disabling RNG early entropy source...
+I (180) cpu_start: Multicore app
+I (188) cpu_start: Pro cpu start user code
+I (188) cpu_start: cpu freq: 160000000 Hz
+I (188) app_init: Application information:
+I (188) app_init: Project name:     rtos-task-watchdog
+I (193) app_init: App version:      1
+I (197) app_init: Compile time:     Sep 20 2025 13:46:24
+I (202) app_init: ELF file SHA256:  2e8e19362...
+I (206) app_init: ESP-IDF:          HEAD-HASH-NOTFOUND
+I (211) efuse_init: Min chip rev:     v0.0
+I (215) efuse_init: Max chip rev:     v3.99
+I (219) efuse_init: Chip rev:         v3.1
+I (223) heap_init: Initializing. RAM available for dynamic allocation:
+I (229) heap_init: At 3FFAE6E0 len 00001920 (6 KiB): DRAM
+I (234) heap_init: At 3FFB2C88 len 0002D378 (180 KiB): DRAM
+I (239) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM
+I (244) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
+I (250) heap_init: At 4008D00C len 00012FF4 (75 KiB): IRAM
+I (257) spi_flash: detected chip: generic
+I (259) spi_flash: flash io: dio
+W (262) spi_flash: Detected size(4096k) larger than the size in the binary image header(2048k). Using the size in the binary image header.
+I (275) main_task: Started on CPU0
+I (285) main_task: Calling app_main()
+I (285) WDT_MULTI: Initializing Task Watchdog...
+E (285) task_wdt: esp_task_wdt_init(517): TWDT already initialized
+ESP_ERROR_CHECK failed: esp_err_t 0x103 (ESP_ERR_INVALID_STATE) at 0x400d6393
+--- 0x400d6393: app_main at C:/tutorials/rtos-task-watchdog/main/main.c:54
+file: "./main/main.c" line 54
+func: app_main
+expression: esp_task_wdt_init(&twdt_config)
+
+abort() was called at PC 0x40085643 on core 0
+.--- 0x40085643: _esp_error_check_failed at C:/Espressif/frameworks/esp-idf-v5.5/components/esp_system/esp_err.c:49
+
+
+Backtrace: 0x40081869:0x3ffb3e60 0x4008564d:0x3ffb3e80 0x4008b385:0x3ffb3ea0 0x40085643:0x3ffb3f10 0x400d6393:0x3ffb3f40 0x400e2d55:0x3ffb3f80 0x40085e41:0x3ffb3fb0    
+--- 0x40081869: panic_abort at C:/Espressif/frameworks/esp-idf-v5.5/components/esp_system/panic.c:469
+--- 0x4008564d: esp_system_abort at C:/Espressif/frameworks/esp-idf-v5.5/components/esp_system/port/esp_system_chip.c:87
+--- 0x4008b385: abort at C:/Espressif/frameworks/esp-idf-v5.5/components/newlib/src/abort.c:38
+--- 0x40085643: _esp_error_check_failed at C:/Espressif/frameworks/esp-idf-v5.5/components/esp_system/esp_err.c:49
+--- 0x400d6393: app_main at C:/tutorials/rtos-task-watchdog/main/main.c:54
+--- 0x400e2d55: main_task at C:/Espressif/frameworks/esp-idf-v5.5/components/freertos/app_startup.c:208
+--- 0x40085e41: vPortTaskWrapper at C:/Espressif/frameworks/esp-idf-v5.5/components/freertos/FreeRTOS-Kernel/portable/xtensa/port.c:139
+

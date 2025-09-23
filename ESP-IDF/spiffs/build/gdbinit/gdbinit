@@ -1,0 +1,2 @@
+source C:/tutorials/spiffs/build/gdbinit/symbols
+source C:/tutorials/spiffs/build/gdbinit/connect
