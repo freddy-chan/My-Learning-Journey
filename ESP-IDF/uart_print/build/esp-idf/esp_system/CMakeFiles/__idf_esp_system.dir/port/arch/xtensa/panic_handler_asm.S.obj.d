@@ -1,0 +1,27 @@
+esp-idf/esp_system/CMakeFiles/__idf_esp_system.dir/port/arch/xtensa/panic_handler_asm.S.obj: \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/esp_system/port/arch/xtensa/panic_handler_asm.S \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/freertos/FreeRTOS-Kernel/portable/xtensa/include/freertos/xtensa_rtos.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/include/xtensa/coreasm.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/esp32/include/xtensa/config/core.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/include/xtensa/hal.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/include/xtensa/xtensa-versions.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/esp32/include/xtensa/config/core-isa.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/esp32/include/xtensa/config/core-matmap.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/esp32/include/xtensa/config/tie.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/esp32/include/xtensa/config/tie-asm.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/esp32/include/xtensa/config/specreg.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/include/xtensa/corebits.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/esp32/include/xtensa/config/system.h \
+ C:/Users/ACER/Desktop/My-Learning-Journey/ESP-IDF/uart_print/build/config/sdkconfig.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/freertos/config/include/freertos/FreeRTOSConfig.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/freertos/config/xtensa/include/freertos/FreeRTOSConfig_arch.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/include/xtensa_config.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/include/xtensa_context.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/include/xtensa/xtruntime-frames.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/include/xtensa_context.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/include/xtensa_timer.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/freertos/FreeRTOS-Kernel/portable/xtensa/include/freertos/xtensa_rtos.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/xtensa/include/esp_private/panic_reason.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/soc/esp32/include/soc/soc.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/esp_common/include/esp_bit_defs.h \
+ C:/Espressif/frameworks/esp-idf-v5.5/components/soc/esp32/register/soc/reg_base.h

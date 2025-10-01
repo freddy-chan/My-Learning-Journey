@@ -1,0 +1,15 @@
+menu "Project Configuration"
+    config LED_GPIO_PIN
+        int "LED GPIO Pin Number"
+        range 0 39
+        default 2
+        help
+            GPIO pin number for the status LED.
+    
+    config BUTTON_GPIO_PIN
+        int "Button GPIO Pin Number" 
+        range 0 39
+        default 0
+        help
+            GPIO pin number for the push button.
+endmenu
