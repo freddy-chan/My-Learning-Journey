@@ -38,6 +38,10 @@
 #include <math.h>
 #include <time.h>  // Added for time functions
 
+#include "wifi_manager.h"
+#include "mqtt_client.h"
+#include "ota_update.h"
+
 // Forward declaration for SD card handle (temporary workaround)
 typedef void* sd_card_handle_t;
 
@@ -64,6 +68,11 @@ static button_controller_handle_t g_button_handle = NULL;
 static dht22_handle_t g_dht22_handle = NULL;
 static mpu6050_handle_t g_mpu6050_handle = NULL;
 static sd_card_handle_t g_sd_card_handle = NULL;
+
+// Component handles for new components
+static wifi_manager_handle_t g_wifi_handle = NULL;
+static mqtt_client_handle_t g_mqtt_handle = NULL;
+static ota_handle_t g_ota_handle = NULL;
 
 // DHT22 sensor data
 static dht22_reading_t g_last_sensor_reading = {0};
@@ -549,6 +558,130 @@ void read_and_display_sensor_data(void) {
 }
 
 /**
+ * @brief WiFi event callback
+ * 
+ * Handles WiFi events and updates system state accordingly
+ * 
+ * @param event The WiFi event that occurred
+ * @param user_data User data (unused)
+ */
+void wifi_event_callback(wifi_event_t event, void* user_data) {
+    ESP_LOGI(TAG, "WiFi Event: %s", wifi_manager_event_to_string(event));
+    
+    switch (event) {
+        case WIFI_EVENT_CONNECTED:
+            ESP_LOGI(TAG, "WiFi connected, initializing MQTT client");
+            // Start MQTT client when WiFi connects
+            if (g_mqtt_handle) {
+                mqtt_client_connect(g_mqtt_handle, false);
+            }
+            break;
+            
+        case WIFI_EVENT_DISCONNECTED:
+            ESP_LOGI(TAG, "WiFi disconnected, stopping MQTT client");
+            // Stop MQTT client when WiFi disconnects
+            if (g_mqtt_handle) {
+                mqtt_client_disconnect(g_mqtt_handle);
+            }
+            break;
+            
+        case WIFI_EVENT_OFFLINE_MODE_ENTERED:
+            ESP_LOGI(TAG, "Entered offline mode");
+            // Notify MQTT client of offline mode
+            if (g_mqtt_handle) {
+                mqtt_client_enter_offline_mode(g_mqtt_handle);
+            }
+            // Defer OTA updates
+            if (g_ota_handle) {
+                ota_set_deferred(g_ota_handle, true);
+            }
+            break;
+            
+        case WIFI_EVENT_OFFLINE_MODE_EXITED:
+            ESP_LOGI(TAG, "Exited offline mode");
+            // Notify MQTT client to exit offline mode
+            if (g_mqtt_handle) {
+                mqtt_client_exit_offline_mode(g_mqtt_handle);
+            }
+            // Enable OTA updates
+            if (g_ota_handle) {
+                ota_set_deferred(g_ota_handle, false);
+            }
+            break;
+            
+        default:
+            break;
+    }
+}
+
+/**
+ * @brief MQTT event callback
+ * 
+ * Handles MQTT events and updates system state accordingly
+ * 
+ * @param event The MQTT event that occurred
+ * @param message Pointer to message data (if applicable)
+ * @param user_data User data (unused)
+ */
+void mqtt_event_callback(mqtt_event_t event, const mqtt_message_t* message, void* user_data) {
+    ESP_LOGI(TAG, "MQTT Event: %s", mqtt_client_event_to_string(event));
+    
+    switch (event) {
+        case MQTT_EVENT_CONNECTED:
+            ESP_LOGI(TAG, "MQTT connected, subscribing to topics");
+            // Subscribe to relevant topics
+            mqtt_client_subscribe(g_mqtt_handle, "smart_logger/commands", MQTT_QOS_AT_LEAST_ONCE);
+            break;
+            
+        case MQTT_EVENT_DATA_RECEIVED:
+            ESP_LOGI(TAG, "MQTT data received on topic: %s", message->topic);
+            // Process received MQTT messages
+            break;
+            
+        case MQTT_EVENT_OFFLINE_SYNC_COMPLETED:
+            ESP_LOGI(TAG, "Completed synchronization of offline messages");
+            break;
+            
+        default:
+            break;
+    }
+}
+
+/**
+ * @brief OTA event callback
+ * 
+ * Handles OTA events and updates system state accordingly
+ * 
+ * @param event The OTA event that occurred
+ * @param progress Pointer to progress information (if applicable)
+ * @param user_data User data (unused)
+ */
+void ota_event_callback(ota_event_t event, const ota_progress_t* progress, void* user_data) {
+    ESP_LOGI(TAG, "OTA Event: %s", ota_event_to_string(event));
+    
+    switch (event) {
+        case OTA_EVENT_UPDATE_AVAILABLE:
+            ESP_LOGI(TAG, "New firmware update available");
+            // In a real application, you might want to automatically start the update
+            // or notify the user based on your application requirements
+            break;
+            
+        case OTA_EVENT_UPDATE_SUCCESS:
+            ESP_LOGI(TAG, "Firmware update successful, rebooting...");
+            // In a real application, you would reboot here
+            // esp_restart();
+            break;
+            
+        case OTA_EVENT_UPDATE_FAILED:
+            ESP_LOGE(TAG, "Firmware update failed");
+            break;
+            
+        default:
+            break;
+    }
+}
+
+/**
  * @brief Main application entry point
  * 
  * This function demonstrates advanced ESP-IDF concepts:
@@ -585,6 +718,13 @@ void app_main(void)
     const system_config_t *config = system_config_get();
     if (config == NULL) {
         ESP_LOGE(TAG, "Failed to get system configuration");
+        return;
+    }
+    
+    // Get network configuration
+    const system_network_config_t *network_config = system_config_get_network();
+    if (network_config == NULL) {
+        ESP_LOGE(TAG, "Failed to get network configuration");
         return;
     }
     
@@ -727,6 +867,69 @@ void app_main(void)
         g_sd_card_handle = NULL;
     }
     
+    // Initialize WiFi manager
+    wifi_manager_config_t wifi_config = {
+        .ssid = network_config->wifi_ssid,
+        .password = network_config->wifi_password,
+        .connect_timeout_ms = 10000,
+        .retry_interval_ms = 5000,
+        .max_retry_count = 3,
+        .auto_reconnect = true
+    };
+    
+    ret = wifi_manager_init(&wifi_config, &g_wifi_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize WiFi manager: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "WiFi manager initialized");
+        // Register WiFi event callback
+        wifi_manager_register_callback(g_wifi_handle, wifi_event_callback, NULL);
+    }
+    
+    // Initialize MQTT client
+    mqtt_client_config_t mqtt_config = {
+        .broker_uri = network_config->mqtt_broker_uri,
+        .client_id = "smart_logger_client",
+        .username = NULL,  // Add if your broker requires authentication
+        .password = NULL,  // Add if your broker requires authentication
+        .connect_timeout_ms = 10000,
+        .retry_interval_ms = 5000,
+        .max_retry_count = 3,
+        .auto_reconnect = true,
+        .keepalive = 120,
+        .use_tls = network_config->mqtt_use_tls
+    };
+    
+    ret = mqtt_client_init(&mqtt_config, &g_mqtt_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize MQTT client: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "MQTT client initialized");
+        // Register MQTT event callback
+        mqtt_client_register_callback(g_mqtt_handle, mqtt_event_callback, NULL);
+    }
+    
+    // Initialize OTA update component
+    ota_config_t ota_config = {
+        .update_url = "https://your-update-server.com/firmware.bin",  // Update with your server URL
+        .cert_pem = NULL,  // Add certificate for secure connection if needed
+        .timeout_ms = 10000,
+        .retry_interval_ms = 5000,
+        .max_retry_count = 3,
+        .auto_update = false,  // Set to true for automatic updates
+        .buffer_size = 1024,
+        .check_interval_ms = 3600000  // Check for updates every hour
+    };
+    
+    ret = ota_init(&ota_config, &g_ota_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize OTA update component: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "OTA update component initialized");
+        // Register OTA event callback
+        ota_register_callback(g_ota_handle, ota_event_callback, NULL);
+    }
+    
     // Initialize system monitoring
     ret = init_system_monitoring();
     if (ret != ESP_OK) {
@@ -754,10 +957,17 @@ void app_main(void)
     ESP_LOGI(TAG, "Waiting for DHT22 sensor to stabilize...");
     vTaskDelay(pdMS_TO_TICKS(3000));
     
-    // Main application loop with sensor integration
+    // Connect to WiFi (this will trigger MQTT connection via callback when successful)
+    if (g_wifi_handle) {
+        wifi_manager_connect(g_wifi_handle, false);
+    }
+    
+    // Main application loop with network integration
     int loop_count = 0;
     uint32_t last_sensor_read = 0;
+    uint32_t last_ota_check = 0;
     const uint32_t SENSOR_READ_INTERVAL = 5000; // 5 seconds
+    const uint32_t OTA_CHECK_INTERVAL = 300000; // 5 minutes
     
     while (1) {
         loop_count++;
@@ -773,6 +983,32 @@ void app_main(void)
             if (loop_count % 5 == 0) {
                 dht22_print_info(g_dht22_handle, true);
             }
+            
+            // Publish sensor data to MQTT if connected
+            if (g_mqtt_handle && mqtt_client_is_connected(g_mqtt_handle)) {
+                char payload[256];
+                snprintf(payload, sizeof(payload), 
+                        "{\"temperature\": %.1f, \"humidity\": %.1f, \"timestamp\": %lu}",
+                        g_last_sensor_reading.temperature,
+                        g_last_sensor_reading.humidity,
+                        (unsigned long)time(NULL));
+                
+                mqtt_client_publish(g_mqtt_handle, 
+                                  "smart_logger/sensor_data", 
+                                  payload, 
+                                  strlen(payload), 
+                                  MQTT_QOS_AT_LEAST_ONCE, 
+                                  false);
+            }
+        }
+        
+        // Check for OTA updates periodically
+        if (current_time - last_ota_check >= OTA_CHECK_INTERVAL) {
+            if (g_ota_handle && !wifi_manager_is_offline_mode(g_wifi_handle)) {
+                ESP_LOGI(TAG, "Checking for firmware updates");
+                ota_check_for_updates(g_ota_handle, false);
+            }
+            last_ota_check = current_time;
         }
         
         // Auto LED blinking mode (only if no recent sensor activity)
@@ -788,6 +1024,24 @@ void app_main(void)
         // Print system status every 10 loops (approximately every 50 seconds)
         if (loop_count % 10 == 0) {
             print_system_status();
+            
+            // Print network status
+            if (g_wifi_handle) {
+                ESP_LOGI(TAG, "WiFi State: %s", wifi_manager_state_to_string(wifi_manager_get_state(g_wifi_handle)));
+                if (wifi_manager_is_connected(g_wifi_handle)) {
+                    char ip_addr[16];
+                    wifi_manager_get_ip_info(g_wifi_handle, ip_addr, NULL, NULL);
+                    ESP_LOGI(TAG, "IP Address: %s", ip_addr);
+                }
+            }
+            
+            if (g_mqtt_handle) {
+                ESP_LOGI(TAG, "MQTT State: %s", mqtt_client_state_to_string(mqtt_client_get_state(g_mqtt_handle)));
+                uint32_t queued_count;
+                if (mqtt_client_get_queued_message_count(g_mqtt_handle, &queued_count) == ESP_OK) {
+                    ESP_LOGI(TAG, "Queued Messages: %lu", queued_count);
+                }
+            }
         }
         
         // Add delay between main loop iterations
@@ -803,6 +1057,15 @@ void app_main(void)
     // SD card deinitialization (commented out until component is fully integrated)
     if (g_sd_card_handle) {
         sd_card_deinit(g_sd_card_handle);
+    }
+    if (g_ota_handle) {
+        ota_deinit(g_ota_handle);
+    }
+    if (g_mqtt_handle) {
+        mqtt_client_deinit(g_mqtt_handle);
+    }
+    if (g_wifi_handle) {
+        wifi_manager_deinit(g_wifi_handle);
     }
     button_controller_deinit(g_button_handle);
     led_controller_deinit();
