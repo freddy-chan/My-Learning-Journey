@@ -128,13 +128,14 @@ static button_state_t button_read_raw_state(button_controller_handle_t handle) {
 }
 
 /**
- * @brief Process button event
+ * @brief Process button event with thread safety
  * 
  * Handles button event processing including statistics update and callback invocation.
- * This function can be called from interrupt context.
+ * This function releases the mutex before calling user callbacks to prevent deadlocks.
  * 
  * @param handle Button handle
  * @param event Button event to process
+ * @param mutex_held True if mutex is currently held by caller
  */
 static void button_process_event(button_controller_handle_t handle, button_event_t event) {
     // Update statistics
@@ -180,12 +181,15 @@ static void button_process_event(button_controller_handle_t handle, button_event
  * @brief Debounce timer callback
  * 
  * Called by ESP timer when debounce period expires. Processes the actual
- * state change and generates appropriate events.
+ * state change and generates appropriate events. Releases mutex before
+ * calling user callbacks to prevent deadlocks.
  * 
  * @param arg Button handle (passed as void pointer)
  */
 static void button_debounce_timer_callback(void *arg) {
     button_controller_handle_t handle = (button_controller_handle_t)arg;
+    button_event_t events_to_process[4];  // Max possible events in one callback
+    int event_count = 0;
     
     // Validate handle
     if (!button_handle_is_valid(handle)) {
@@ -211,9 +215,17 @@ static void button_debounce_timer_callback(void *arg) {
         // Generate events based on state change
         if (old_state != handle->current_state) {
             if (handle->current_state == BUTTON_STATE_PRESSED) {
-                button_process_event(handle, BUTTON_EVENT_PRESSED);
+                // Update statistics while mutex is held
+                handle->total_presses++;
+                handle->last_press_time = button_get_time_us();
+                ESP_LOGD(TAG, "Button pressed (total: %lu)", handle->total_presses);
+                events_to_process[event_count++] = BUTTON_EVENT_PRESSED;
             } else {
-                button_process_event(handle, BUTTON_EVENT_RELEASED);
+                // Update statistics while mutex is held
+                handle->total_releases++;
+                handle->last_release_time = button_get_time_us();
+                ESP_LOGD(TAG, "Button released (total: %lu)", handle->total_releases);
+                events_to_process[event_count++] = BUTTON_EVENT_RELEASED;
                 
                 // Check for click and double-click
                 uint64_t current_time = button_get_time_us();
@@ -221,12 +233,15 @@ static void button_debounce_timer_callback(void *arg) {
                 
                 // Generate click event if press was short enough
                 if (press_duration < handle->config.long_press_time_ms) {
-                    button_process_event(handle, BUTTON_EVENT_CLICK);
+                    ESP_LOGD(TAG, "Single click detected");
+                    events_to_process[event_count++] = BUTTON_EVENT_CLICK;
                     
                     // Check for double-click
                     uint32_t time_since_last_click = button_us_to_ms(current_time - handle->last_click_time);
                     if (time_since_last_click < handle->config.double_click_timeout_ms) {
-                        button_process_event(handle, BUTTON_EVENT_DOUBLE_CLICK);
+                        handle->total_double_clicks++;
+                        ESP_LOGD(TAG, "Double click detected (total: %lu)", handle->total_double_clicks);
+                        events_to_process[event_count++] = BUTTON_EVENT_DOUBLE_CLICK;
                     }
                     
                     handle->last_click_time = current_time;
@@ -240,19 +255,28 @@ static void button_debounce_timer_callback(void *arg) {
         handle->last_debounce_time = button_get_time_us();
     }
     
-    // Release mutex
+    // Release mutex BEFORE calling user callbacks
     xSemaphoreGive(handle->mutex);
+    
+    // Process all events without mutex held (prevents deadlocks)
+    if (handle->events_enabled && handle->callback != NULL) {
+        for (int i = 0; i < event_count; i++) {
+            handle->callback(events_to_process[i], handle->user_data);
+        }
+    }
 }
 
 /**
  * @brief Long press timer callback
  * 
  * Called when button has been held for long press duration.
+ * Releases mutex before calling user callback to prevent deadlocks.
  * 
  * @param arg Button handle (passed as void pointer)
  */
 static void button_long_press_timer_callback(void *arg) {
     button_controller_handle_t handle = (button_controller_handle_t)arg;
+    bool should_process_event = false;
     
     // Validate handle
     if (!button_handle_is_valid(handle)) {
@@ -268,11 +292,19 @@ static void button_long_press_timer_callback(void *arg) {
     
     // Check if button is still pressed
     if (handle->current_state == BUTTON_STATE_PRESSED) {
-        button_process_event(handle, BUTTON_EVENT_LONG_PRESS);
+        should_process_event = true;
+        // Update statistics while mutex is held
+        handle->total_long_presses++;
+        ESP_LOGD(TAG, "Long press detected (total: %lu)", handle->total_long_presses);
     }
     
-    // Release mutex
+    // Release mutex BEFORE calling user callback
     xSemaphoreGive(handle->mutex);
+    
+    // Call user callback without mutex held (prevents deadlock)
+    if (should_process_event && handle->events_enabled && handle->callback != NULL) {
+        handle->callback(BUTTON_EVENT_LONG_PRESS, handle->user_data);
+    }
 }
 
 /**

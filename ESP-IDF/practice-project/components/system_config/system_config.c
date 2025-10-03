@@ -235,17 +235,20 @@ esp_err_t system_config_init(void) {
     load_timing_config(&g_system_config.timing);
     load_network_config(&g_system_config.network);
     
+    // Mark configuration as initialized BEFORE validation
+    g_system_config.initialized = true;
+    g_config_initialized = true;
+    
     // Validate loaded configuration
     config_validation_result_t validation_result = system_config_validate_all();
     if (validation_result != CONFIG_VALID) {
         ESP_LOGE(TAG, "Configuration validation failed: %s", 
                  system_config_validation_to_string(validation_result));
+        // Reset initialization flags on failure
+        g_system_config.initialized = false;
+        g_config_initialized = false;
         return ESP_ERR_INVALID_ARG;
     }
-    
-    // Mark configuration as initialized
-    g_system_config.initialized = true;
-    g_config_initialized = true;
     
     // Initialize callback array
     memset(g_config_callbacks, 0, sizeof(g_config_callbacks));
