@@ -71,19 +71,132 @@ menu "Smart Environment Data Logger Configuration"
             help
                 GPIO pin number for DHT22 sensor data line.
         
-        config MPU6050_I2C_SDA_PIN
-            int "MPU6050 I2C SDA Pin"
-            range 0 39
-            default 21
-            help
-                GPIO pin number for MPU6050 I2C SDA line.
+        menu "MPU6050 Accelerometer/Gyroscope"
         
-        config MPU6050_I2C_SCL_PIN
-            int "MPU6050 I2C SCL Pin"
-            range 0 39  
-            default 22
-            help
-                GPIO pin number for MPU6050 I2C SCL line.
+            config MPU6050_I2C_SDA_PIN
+                int "MPU6050 I2C SDA Pin"
+                range 0 39
+                default 21
+                help
+                    GPIO pin number for MPU6050 I2C SDA line.
+                    Standard I2C SDA pin for ESP32.
+            
+            config MPU6050_I2C_SCL_PIN
+                int "MPU6050 I2C SCL Pin"
+                range 0 39  
+                default 22
+                help
+                    GPIO pin number for MPU6050 I2C SCL line.
+                    Standard I2C SCL pin for ESP32.
+            
+            choice MPU6050_I2C_ADDRESS
+                prompt "MPU6050 I2C Address"
+                default MPU6050_I2C_ADDR_DEFAULT
+                help
+                    Select the I2C address for MPU6050.
+                    Address depends on AD0 pin connection.
+                
+                config MPU6050_I2C_ADDR_DEFAULT
+                    bool "0x68 (AD0 = 0)"
+                config MPU6050_I2C_ADDR_ALT
+                    bool "0x69 (AD0 = 1)"
+            endchoice
+            
+            config MPU6050_I2C_FREQUENCY
+                int "I2C Bus Frequency (Hz)"
+                range 100000 400000
+                default 400000
+                help
+                    I2C bus frequency for MPU6050 communication.
+                    Standard: 100kHz, Fast: 400kHz
+            
+            choice MPU6050_ACCEL_RANGE
+                prompt "Accelerometer Range"
+                default MPU6050_ACCEL_2G
+                help
+                    Select the accelerometer measurement range.
+                    Higher range = lower sensitivity but wider measurement range.
+                
+                config MPU6050_ACCEL_2G
+                    bool "±2g (16384 LSB/g)"
+                config MPU6050_ACCEL_4G
+                    bool "±4g (8192 LSB/g)"
+                config MPU6050_ACCEL_8G
+                    bool "±8g (4096 LSB/g)"
+                config MPU6050_ACCEL_16G
+                    bool "±16g (2048 LSB/g)"
+            endchoice
+            
+            choice MPU6050_GYRO_RANGE
+                prompt "Gyroscope Range"
+                default MPU6050_GYRO_250DPS
+                help
+                    Select the gyroscope measurement range.
+                    Higher range = lower sensitivity but wider measurement range.
+                
+                config MPU6050_GYRO_250DPS
+                    bool "±250°/s (131 LSB/°/s)"
+                config MPU6050_GYRO_500DPS
+                    bool "±500°/s (65.5 LSB/°/s)"
+                config MPU6050_GYRO_1000DPS
+                    bool "±1000°/s (32.8 LSB/°/s)"
+                config MPU6050_GYRO_2000DPS
+                    bool "±2000°/s (16.4 LSB/°/s)"
+            endchoice
+            
+            choice MPU6050_DLPF_MODE
+                prompt "Digital Low Pass Filter"
+                default MPU6050_DLPF_44HZ
+                help
+                    Configure the digital low pass filter bandwidth.
+                    Lower bandwidth = less noise but slower response.
+                
+                config MPU6050_DLPF_260HZ
+                    bool "260Hz bandwidth"
+                config MPU6050_DLPF_184HZ
+                    bool "184Hz bandwidth"
+                config MPU6050_DLPF_94HZ
+                    bool "94Hz bandwidth"
+                config MPU6050_DLPF_44HZ
+                    bool "44Hz bandwidth (recommended)"
+                config MPU6050_DLPF_21HZ
+                    bool "21Hz bandwidth"
+                config MPU6050_DLPF_10HZ
+                    bool "10Hz bandwidth"
+                config MPU6050_DLPF_5HZ
+                    bool "5Hz bandwidth"
+            endchoice
+            
+            config MPU6050_ENABLE_CALIBRATION
+                bool "Enable Auto-Calibration on Startup"
+                default y
+                help
+                    Automatically calibrate sensor offsets during initialization.
+                    Sensor must be stationary during calibration.
+            
+            config MPU6050_CALIBRATION_SAMPLES
+                int "Calibration Sample Count"
+                depends on MPU6050_ENABLE_CALIBRATION
+                range 100 5000
+                default 1000
+                help
+                    Number of samples to collect during calibration.
+                    More samples = better accuracy but longer calibration time.
+            
+            config MPU6050_ENABLE_STATISTICS
+                bool "Enable Performance Statistics"
+                default y
+                help
+                    Track sensor performance statistics (success rate, errors, etc.).
+            
+            config MPU6050_ENABLE_DEBUG_LOGGING
+                bool "Enable Debug Logging"
+                default n
+                help
+                    Enable detailed debug logging for MPU6050 operations.
+                    Useful for development and troubleshooting.
+        
+        endmenu
                 
     endmenu
     

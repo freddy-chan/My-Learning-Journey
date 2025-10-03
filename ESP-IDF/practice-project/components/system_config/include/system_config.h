@@ -92,6 +92,24 @@ typedef struct {
 } system_network_config_t;
 
 /**
+ * @brief Sensor configuration structure
+ * 
+ * Contains sensor-specific configuration parameters
+ */
+typedef struct {
+    // MPU6050 configuration
+    uint8_t mpu6050_i2c_address;    /**< MPU6050 I2C address (0x68 or 0x69) */
+    uint32_t mpu6050_i2c_frequency; /**< I2C bus frequency for MPU6050 */
+    uint8_t mpu6050_accel_range;    /**< Accelerometer range (0-3) */
+    uint8_t mpu6050_gyro_range;     /**< Gyroscope range (0-3) */
+    uint8_t mpu6050_dlpf_mode;      /**< Digital low pass filter mode (0-6) */
+    bool mpu6050_enable_calibration; /**< Enable auto-calibration */
+    uint32_t mpu6050_calibration_samples; /**< Calibration sample count */
+    bool mpu6050_enable_statistics; /**< Enable performance statistics */
+    bool mpu6050_enable_debug;      /**< Enable debug logging */
+} system_sensor_config_t;
+
+/**
  * @brief Complete system configuration structure
  * 
  * Aggregates all configuration subsystems into a single structure
@@ -100,6 +118,7 @@ typedef struct {
     system_gpio_config_t gpio;       /**< GPIO pin assignments */
     system_timing_config_t timing;   /**< Timing parameters */
     system_network_config_t network; /**< Network configuration */
+    system_sensor_config_t sensors;  /**< Sensor configuration */
     bool initialized;                /**< Configuration initialization flag */
     uint32_t config_version;         /**< Configuration version for compatibility */
 } system_config_t;
@@ -163,6 +182,15 @@ const system_timing_config_t* system_config_get_timing(void);
  * @return Pointer to network configuration, or NULL if not initialized
  */
 const system_network_config_t* system_config_get_network(void);
+
+/**
+ * @brief Get sensor configuration subset
+ * 
+ * Returns only the sensor-related configuration parameters.
+ * 
+ * @return Pointer to sensor configuration, or NULL if not initialized
+ */
+const system_sensor_config_t* system_config_get_sensors(void);
 
 /**
  * @brief Validate GPIO pin assignment

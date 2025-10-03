@@ -31,6 +31,15 @@
 #include "button_controller.h"
 #include "system_config.h"
 #include "dht22_sensor.h"
+#include "mpu6050_sensor.h"
+#include "sd_card_storage.h"  // Uncommented SD card storage header
+#include "driver/spi_master.h"  // Added for SPI_HOST definitions
+#include "esp_timer.h"  // Added for esp_timer_get_time function
+#include <math.h>
+#include <time.h>  // Added for time functions
+
+// Forward declaration for SD card handle (temporary workaround)
+typedef void* sd_card_handle_t;
 
 // Application tag for logging
 static const char *TAG = "MAIN_APP";
@@ -53,10 +62,16 @@ static bool g_system_healthy = true;
 // Component handles
 static button_controller_handle_t g_button_handle = NULL;
 static dht22_handle_t g_dht22_handle = NULL;
+static mpu6050_handle_t g_mpu6050_handle = NULL;
+static sd_card_handle_t g_sd_card_handle = NULL;
 
 // DHT22 sensor data
 static dht22_reading_t g_last_sensor_reading = {0};
 static bool g_sensor_data_valid = false;
+
+// MPU6050 sensor data
+static mpu6050_data_t g_last_mpu_reading = {0};
+static bool g_mpu_data_valid = false;
 
 // System state management
 static volatile bool g_led_auto_mode = true;  // Flag for automatic LED blinking
@@ -379,46 +394,148 @@ void print_system_status(void) {
 }
 
 /**
- * @brief Read DHT22 sensor and display data
+ * @brief Read all sensors and display data
  * 
- * This function reads the DHT22 sensor and displays the temperature/humidity
- * data through different LED patterns.
+ * This function reads all available sensors (DHT22, MPU6050) and displays the data
+ * through different LED patterns and logging.
  */
 void read_and_display_sensor_data(void) {
-    if (g_dht22_handle == NULL) {
-        return;
+    bool any_sensor_valid = false;
+    
+    // Read DHT22 sensor if available
+    if (g_dht22_handle != NULL) {
+        esp_err_t ret = dht22_read(g_dht22_handle, &g_last_sensor_reading);
+        
+        if (ret == ESP_OK) {
+            g_sensor_data_valid = true;
+            any_sensor_valid = true;
+            
+            ESP_LOGI(TAG, "Environmental Data:");
+            ESP_LOGI(TAG, "  Temperature: %.1f°C (%.1f°F)", 
+                    g_last_sensor_reading.temperature, 
+                    dht22_celsius_to_fahrenheit(g_last_sensor_reading.temperature));
+            ESP_LOGI(TAG, "  Humidity: %.1f%%", g_last_sensor_reading.humidity);
+            ESP_LOGI(TAG, "  Heat Index: %.1f°C", 
+                    dht22_calculate_heat_index(g_last_sensor_reading.temperature, g_last_sensor_reading.humidity));
+            ESP_LOGI(TAG, "  Dew Point: %.1f°C", 
+                    dht22_calculate_dew_point(g_last_sensor_reading.temperature, g_last_sensor_reading.humidity));
+        } else {
+            ESP_LOGW(TAG, "Failed to read DHT22 sensor: %s", dht22_error_to_string(ret));
+            g_sensor_data_valid = false;
+        }
     }
     
-    esp_err_t ret = dht22_read(g_dht22_handle, &g_last_sensor_reading);
-    
-    if (ret == ESP_OK) {
-        g_sensor_data_valid = true;
+    // Read MPU6050 sensor if available
+    if (g_mpu6050_handle != NULL) {
+        mpu6050_data_t mpu_data;
+        esp_err_t ret = mpu6050_read_processed(g_mpu6050_handle, &mpu_data);
         
-        ESP_LOGI(TAG, "Environmental Data:");
-        ESP_LOGI(TAG, "  Temperature: %.1f°C (%.1f°F)", 
-                g_last_sensor_reading.temperature, 
-                dht22_celsius_to_fahrenheit(g_last_sensor_reading.temperature));
-        ESP_LOGI(TAG, "  Humidity: %.1f%%", g_last_sensor_reading.humidity);
-        ESP_LOGI(TAG, "  Heat Index: %.1f°C", 
-                dht22_calculate_heat_index(g_last_sensor_reading.temperature, g_last_sensor_reading.humidity));
-        ESP_LOGI(TAG, "  Dew Point: %.1f°C", 
-                dht22_calculate_dew_point(g_last_sensor_reading.temperature, g_last_sensor_reading.humidity));
-        
-        // Use LED to indicate temperature range
-        if (g_last_sensor_reading.temperature < 20.0f) {
-            // Cold - slow blink
-            led_controller_blink(1000, 1000, 2000);
-        } else if (g_last_sensor_reading.temperature < 25.0f) {
-            // Comfortable - normal blink
-            led_controller_blink(500, 500, 1000);
+        if (ret == ESP_OK) {
+            g_mpu_data_valid = true;
+            any_sensor_valid = true;
+            
+            // Store the data for use in LED patterns
+            g_last_mpu_reading = mpu_data;
+            
+            ESP_LOGI(TAG, "Motion Data:");
+            ESP_LOGI(TAG, "  Acceleration: X=%.2f Y=%.2f Z=%.2f m/s²", 
+                    mpu_data.accel_x, mpu_data.accel_y, mpu_data.accel_z);
+            ESP_LOGI(TAG, "  Gyroscope: X=%.2f Y=%.2f Z=%.2f °/s", 
+                    mpu_data.gyro_x, mpu_data.gyro_y, mpu_data.gyro_z);
+            ESP_LOGI(TAG, "  Orientation: Roll=%.1f° Pitch=%.1f° Yaw=%.1f°", 
+                    mpu_data.roll, mpu_data.pitch, mpu_data.yaw);
+            ESP_LOGI(TAG, "  Temperature: %.1f°C", mpu_data.temp_celsius);
         } else {
-            // Warm/Hot - fast blink
-            led_controller_blink(200, 200, 800);
+            ESP_LOGW(TAG, "Failed to read MPU6050 sensor: %s", mpu6050_error_to_string(ret));
+            g_mpu_data_valid = false;
+        }
+    }
+    
+    // Log sensor data to SD card if available
+    if (any_sensor_valid && g_sd_card_handle != NULL) {
+        // Forward declaration for sensor log entry (temporary workaround)
+        /*
+        typedef struct {
+            time_t timestamp;
+            float temperature;
+            float humidity;
+            float accel_x;
+            float accel_y;
+            float accel_z;
+            float gyro_x;
+            float gyro_y;
+            float gyro_z;
+            float pressure;
+            char location[32];
+        */
+        
+        // Create sensor log entry
+        sensor_log_entry_t log_entry = {0};
+        log_entry.timestamp = (time_t)(esp_timer_get_time() / 1000000);  // Convert microseconds to seconds
+        
+        // Fill in data from available sensors
+        if (g_sensor_data_valid) {
+            log_entry.temperature = g_last_sensor_reading.temperature;
+            log_entry.humidity = g_last_sensor_reading.humidity;
         }
         
+        if (g_mpu_data_valid) {
+            log_entry.accel_x = g_last_mpu_reading.accel_x;
+            log_entry.accel_y = g_last_mpu_reading.accel_y;
+            log_entry.accel_z = g_last_mpu_reading.accel_z;
+            log_entry.gyro_x = g_last_mpu_reading.gyro_x;
+            log_entry.gyro_y = g_last_mpu_reading.gyro_y;
+            log_entry.gyro_z = g_last_mpu_reading.gyro_z;
+        }
+        
+        // Set default location
+        strncpy(log_entry.location, "default", sizeof(log_entry.location) - 1);
+        log_entry.location[sizeof(log_entry.location) - 1] = '\0';
+        
+        // Log data to SD card (commented out until component is fully integrated)
+        esp_err_t ret = sd_card_write_sensor_log(g_sd_card_handle, "data.csv", &log_entry);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to log sensor data to SD card: %s", sd_card_error_to_string(ret));
+        } else {
+            ESP_LOGD(TAG, "Sensor data logged to SD card successfully");
+        }
+    }
+    
+    // LED indication based on sensor data
+    if (any_sensor_valid) {
+        // If we have environmental data, use temperature-based patterns
+        if (g_sensor_data_valid) {
+            if (g_last_sensor_reading.temperature < 20.0f) {
+                // Cold - slow blue-ish blink
+                led_controller_blink(1000, 1000, 2000);
+            } else if (g_last_sensor_reading.temperature < 25.0f) {
+                // Comfortable - normal green blink
+                led_controller_blink(500, 500, 1000);
+            } else {
+                // Warm/Hot - fast red-ish blink
+                led_controller_blink(200, 200, 800);
+            }
+        } 
+        // If we only have motion data, use acceleration-based patterns
+        else if (g_mpu_data_valid) {
+            float total_accel = sqrtf(g_last_mpu_reading.accel_x * g_last_mpu_reading.accel_x +
+                                     g_last_mpu_reading.accel_y * g_last_mpu_reading.accel_y +
+                                     g_last_mpu_reading.accel_z * g_last_mpu_reading.accel_z);
+            
+            if (total_accel < 9.0f) {
+                // Stationary - slow blink
+                led_controller_blink(800, 800, 1600);
+            } else if (total_accel < 12.0f) {
+                // Low motion - medium blink
+                led_controller_blink(400, 400, 800);
+            } else {
+                // High motion - fast blink
+                led_controller_blink(100, 100, 400);
+            }
+        }
     } else {
-        ESP_LOGW(TAG, "Failed to read DHT22 sensor: %s", dht22_error_to_string(ret));
-        g_sensor_data_valid = false;
+        // No valid sensor data - error pattern
+        ESP_LOGW(TAG, "No valid sensor data available");
         
         // Error pattern - quick double blink
         led_controller_set_state(LED_STATE_ON);
@@ -471,6 +588,13 @@ void app_main(void)
         return;
     }
     
+    // Get sensor configuration
+    const system_sensor_config_t *sensor_config = system_config_get_sensors();
+    if (sensor_config == NULL) {
+        ESP_LOGE(TAG, "Failed to get sensor configuration");
+        return;
+    }
+    
     // Step 4: Initialize components using configuration values
     led_config_t led_config = {
         .gpio_pin = config->gpio.led_pin,
@@ -494,6 +618,24 @@ void app_main(void)
         .enable_statistics = true,
         .enable_debug_logging = true,
         .timeout_us = 0
+    };
+    
+    // MPU6050 configuration using system config values
+    mpu6050_config_t mpu6050_config = {
+        .sda_pin = config->gpio.mpu6050_sda_pin,
+        .scl_pin = config->gpio.mpu6050_scl_pin,
+        .int_pin = -1,  // No interrupt pin used
+        .i2c_address = sensor_config->mpu6050_i2c_address,
+        .i2c_port = I2C_NUM_0,
+        .i2c_frequency = sensor_config->mpu6050_i2c_frequency,
+        .accel_range = sensor_config->mpu6050_accel_range,
+        .gyro_range = sensor_config->mpu6050_gyro_range,
+        .dlpf_mode = sensor_config->mpu6050_dlpf_mode,
+        .enable_dmp = false,  // DMP not implemented yet
+        .enable_interrupt = false,
+        .enable_statistics = sensor_config->mpu6050_enable_statistics,
+        .enable_debug_logging = sensor_config->mpu6050_enable_debug,
+        .timeout_ms = 100
     };
     
     ESP_LOGI(TAG, "Initializing components with configuration-based settings...");
@@ -526,6 +668,64 @@ void app_main(void)
         return;
     }
     ESP_LOGI(TAG, "DHT22 sensor initialized on GPIO %d", DHT22_DATA_PIN);
+    
+    // Initialize MPU6050 sensor
+    ret = mpu6050_init(&mpu6050_config, &g_mpu6050_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize MPU6050 sensor: %s", esp_err_to_name(ret));
+        // Don't exit - MPU6050 is optional, continue with other sensors
+        g_mpu6050_handle = NULL;
+    } else {
+        ESP_LOGI(TAG, "MPU6050 sensor initialized on SDA=GPIO%d, SCL=GPIO%d", 
+                 mpu6050_config.sda_pin, mpu6050_config.scl_pin);
+        
+        // Perform auto-calibration if enabled
+        if (sensor_config->mpu6050_enable_calibration) {
+            ESP_LOGI(TAG, "Starting MPU6050 auto-calibration...");
+            ret = mpu6050_calibrate(g_mpu6050_handle, sensor_config->mpu6050_calibration_samples);
+            if (ret == ESP_OK) {
+                ESP_LOGI(TAG, "MPU6050 calibration completed successfully");
+            } else {
+                ESP_LOGW(TAG, "MPU6050 calibration failed: %s", mpu6050_error_to_string(ret));
+            }
+        }
+    }
+    
+    // Initialize SD card storage component
+    // Get SD card configuration from system config
+    const system_gpio_config_t *gpio_config = system_config_get_gpio();
+    if (gpio_config != NULL) {
+        sd_card_config_t sd_card_config = {
+            .cs_pin = gpio_config->sd_cs_pin,
+            .mosi_pin = gpio_config->sd_mosi_pin,
+            .miso_pin = gpio_config->sd_miso_pin,
+            .clk_pin = gpio_config->sd_clk_pin,
+            .spi_host = SPI2_HOST,  // Use the correct SPI host definition
+            .max_files = 5,
+            .format_if_mount_failed = false,
+            .allocation_unit_size = 16 * 1024
+        };
+        
+        // Initialize SD card storage (commented out until component is fully integrated)
+        ret = sd_card_init(&sd_card_config, &g_sd_card_handle);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize SD card storage: %s", sd_card_error_to_string(ret));
+            g_sd_card_handle = NULL;
+        } else {
+            ESP_LOGI(TAG, "SD card storage initialized on SPI2 (CS=GPIO%d)", sd_card_config.cs_pin);
+            
+            // Create initial log file
+            ret = sd_card_create_log_file(g_sd_card_handle, "data.csv");
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to create sensor log file: %s", sd_card_error_to_string(ret));
+            } else {
+                ESP_LOGI(TAG, "Sensor log file created successfully");
+            }
+        }
+    } else {
+        ESP_LOGW(TAG, "Failed to get GPIO configuration for SD card");
+        g_sd_card_handle = NULL;
+    }
     
     // Initialize system monitoring
     ret = init_system_monitoring();
@@ -597,6 +797,13 @@ void app_main(void)
     // Cleanup (this code won't be reached due to infinite loop above)
     ESP_LOGI(TAG, "Cleaning up components...");
     dht22_deinit(g_dht22_handle);
+    if (g_mpu6050_handle) {
+        mpu6050_deinit(g_mpu6050_handle);
+    }
+    // SD card deinitialization (commented out until component is fully integrated)
+    if (g_sd_card_handle) {
+        sd_card_deinit(g_sd_card_handle);
+    }
     button_controller_deinit(g_button_handle);
     led_controller_deinit();
     if (g_system_monitor_timer) {
