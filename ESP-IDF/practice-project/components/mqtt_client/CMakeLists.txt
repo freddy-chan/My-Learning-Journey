@@ -8,4 +8,5 @@ idf_component_register(
              "esp_wifi"
              "esp_event"
              "freertos"
+             "esp_system"
 )

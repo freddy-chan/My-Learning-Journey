@@ -25,13 +25,13 @@
  * @version 1.0
  */
 
-#ifndef MQTT_CLIENT_H
-#define MQTT_CLIENT_H
+#ifndef MQTT_MANAGER_H
+#define MQTT_MANAGER_H
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include "esp_err.h"
+#include <esp_err.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -21,6 +21,8 @@
 #include "freertos/event_groups.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 static const char *TAG = "WIFI_MGR";
 
@@ -145,16 +147,16 @@ static esp_err_t init_wifi_subsystem(struct wifi_manager_context* ctx)
     // Initialize TCP/IP network interface
     ESP_ERROR_CHECK(esp_netif_init());
     
-    // Create default WiFi station
-    ctx->netif = esp_netif_create_default_wifi_sta();
-    if (ctx->netif == NULL) {
-        ESP_LOGE(TAG, "Failed to create default WiFi station");
-        return ESP_FAIL;
+    // Create default event loop
+    esp_err_t ret = esp_event_loop_create_default();
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "Failed to create default event loop: %s", esp_err_to_name(ret));
+        return ret;
     }
     
     // Initialize WiFi
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_err_t ret = esp_wifi_init(&cfg);
+    ret = esp_wifi_init(&cfg);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize WiFi: %s", esp_err_to_name(ret));
         return ret;
@@ -165,6 +167,13 @@ static esp_err_t init_wifi_subsystem(struct wifi_manager_context* ctx)
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set WiFi storage: %s", esp_err_to_name(ret));
         return ret;
+    }
+    
+    // Create default WiFi station AFTER WiFi is initialized
+    ctx->netif = esp_netif_create_default_wifi_sta();
+    if (ctx->netif == NULL) {
+        ESP_LOGE(TAG, "Failed to create default WiFi station");
+        return ESP_FAIL;
     }
     
     // Register event handlers

@@ -407,6 +407,7 @@ esp_err_t mqtt_client_init(const mqtt_client_config_t* config, mqtt_client_handl
     // Create ESP-IDF MQTT client configuration
     esp_mqtt_client_config_t esp_config = {0};
     create_esp_mqtt_config(ctx, &esp_config);
+    esp_config.user_context = ctx;
     
     // Create ESP-IDF MQTT client
     ctx->esp_mqtt_client = esp_mqtt_client_init(&esp_config);

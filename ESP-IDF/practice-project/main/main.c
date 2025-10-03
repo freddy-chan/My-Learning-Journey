@@ -39,7 +39,7 @@
 #include <time.h>  // Added for time functions
 
 #include "wifi_manager.h"
-#include "mqtt_client.h"
+#include "mqtt_manager.h"
 #include "ota_update.h"
 
 // Forward declaration for SD card handle (temporary workaround)
@@ -997,7 +997,7 @@ void app_main(void)
                                   "smart_logger/sensor_data", 
                                   payload, 
                                   strlen(payload), 
-                                  MQTT_MGR_QOS_AT_LEAST_ONCE, 
+                                  MQTT_MGR_QOS_AT_LEAST_ONCE,
                                   false);
             }
         }

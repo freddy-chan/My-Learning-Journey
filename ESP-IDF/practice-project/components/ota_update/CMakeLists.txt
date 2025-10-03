@@ -9,4 +9,5 @@ idf_component_register(
              "esp_https_ota"
              "esp_wifi"
              "freertos"
+             "esp_timer"
 )
