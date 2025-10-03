@@ -1,0 +1,288 @@
+# Smart Environment Data Logger Configuration Menu
+# This file defines configuration options available in 'idf.py menuconfig'
+# Following ESP-IDF Kconfig syntax standards for proper menuconfig integration
+
+menu "Smart Environment Data Logger Configuration"
+
+    menu "GPIO Configuration"
+        
+        config LED_GPIO_PIN
+            int "LED GPIO Pin Number"
+            range 0 39
+            default 2
+            help
+                GPIO pin number for the status LED.
+                Default is GPIO 2 (built-in LED on most ESP32 boards).
+        
+        config LED_ACTIVE_LEVEL
+            bool "LED Active Level"
+            default y
+            help
+                LED active level configuration:
+                y = Active HIGH (LED turns on with logic 1)
+                n = Active LOW (LED turns on with logic 0)
+        
+        config BUTTON_GPIO_PIN
+            int "Button GPIO Pin Number" 
+            range 0 39
+            default 0
+            help
+                GPIO pin number for the push button.
+                Default is GPIO 0 (BOOT button on most ESP32 boards).
+        
+        config BUTTON_ACTIVE_LEVEL
+            bool "Button Active Level"
+            default n
+            help
+                Button active level configuration:
+                y = Active HIGH (button press = logic 1)
+                n = Active LOW (button press = logic 0)
+        
+        config BUTTON_DEBOUNCE_TIME_MS
+            int "Button Debounce Time (ms)"
+            range 10 500
+            default 50
+            help
+                Debounce time for button in milliseconds.
+                Typical values: 20-100ms depending on button quality.
+        
+        config BUTTON_LONG_PRESS_TIME_MS
+            int "Button Long Press Time (ms)"
+            range 500 5000
+            default 1000
+            help
+                Time required to register a long press in milliseconds.
+        
+        config BUTTON_DOUBLE_CLICK_TIMEOUT_MS
+            int "Button Double Click Timeout (ms)"
+            range 100 1000
+            default 300
+            help
+                Maximum time between clicks to register a double click.
+                
+    endmenu
+    
+    menu "Sensor Configuration"
+        
+        config DHT22_GPIO_PIN
+            int "DHT22 Data GPIO Pin"
+            range 0 39
+            default 4
+            help
+                GPIO pin number for DHT22 sensor data line.
+        
+        menu "MPU6050 Accelerometer/Gyroscope"
+        
+            config MPU6050_I2C_SDA_PIN
+                int "MPU6050 I2C SDA Pin"
+                range 0 39
+                default 21
+                help
+                    GPIO pin number for MPU6050 I2C SDA line.
+                    Standard I2C SDA pin for ESP32.
+            
+            config MPU6050_I2C_SCL_PIN
+                int "MPU6050 I2C SCL Pin"
+                range 0 39  
+                default 22
+                help
+                    GPIO pin number for MPU6050 I2C SCL line.
+                    Standard I2C SCL pin for ESP32.
+            
+            choice MPU6050_I2C_ADDRESS
+                prompt "MPU6050 I2C Address"
+                default MPU6050_I2C_ADDR_DEFAULT
+                help
+                    Select the I2C address for MPU6050.
+                    Address depends on AD0 pin connection.
+                
+                config MPU6050_I2C_ADDR_DEFAULT
+                    bool "0x68 (AD0 = 0)"
+                config MPU6050_I2C_ADDR_ALT
+                    bool "0x69 (AD0 = 1)"
+            endchoice
+            
+            config MPU6050_I2C_FREQUENCY
+                int "I2C Bus Frequency (Hz)"
+                range 100000 400000
+                default 400000
+                help
+                    I2C bus frequency for MPU6050 communication.
+                    Standard: 100kHz, Fast: 400kHz
+            
+            choice MPU6050_ACCEL_RANGE
+                prompt "Accelerometer Range"
+                default MPU6050_ACCEL_2G
+                help
+                    Select the accelerometer measurement range.
+                    Higher range = lower sensitivity but wider measurement range.
+                
+                config MPU6050_ACCEL_2G
+                    bool "±2g (16384 LSB/g)"
+                config MPU6050_ACCEL_4G
+                    bool "±4g (8192 LSB/g)"
+                config MPU6050_ACCEL_8G
+                    bool "±8g (4096 LSB/g)"
+                config MPU6050_ACCEL_16G
+                    bool "±16g (2048 LSB/g)"
+            endchoice
+            
+            choice MPU6050_GYRO_RANGE
+                prompt "Gyroscope Range"
+                default MPU6050_GYRO_250DPS
+                help
+                    Select the gyroscope measurement range.
+                    Higher range = lower sensitivity but wider measurement range.
+                
+                config MPU6050_GYRO_250DPS
+                    bool "±250°/s (131 LSB/°/s)"
+                config MPU6050_GYRO_500DPS
+                    bool "±500°/s (65.5 LSB/°/s)"
+                config MPU6050_GYRO_1000DPS
+                    bool "±1000°/s (32.8 LSB/°/s)"
+                config MPU6050_GYRO_2000DPS
+                    bool "±2000°/s (16.4 LSB/°/s)"
+            endchoice
+            
+            choice MPU6050_DLPF_MODE
+                prompt "Digital Low Pass Filter"
+                default MPU6050_DLPF_44HZ
+                help
+                    Configure the digital low pass filter bandwidth.
+                    Lower bandwidth = less noise but slower response.
+                
+                config MPU6050_DLPF_260HZ
+                    bool "260Hz bandwidth"
+                config MPU6050_DLPF_184HZ
+                    bool "184Hz bandwidth"
+                config MPU6050_DLPF_94HZ
+                    bool "94Hz bandwidth"
+                config MPU6050_DLPF_44HZ
+                    bool "44Hz bandwidth (recommended)"
+                config MPU6050_DLPF_21HZ
+                    bool "21Hz bandwidth"
+                config MPU6050_DLPF_10HZ
+                    bool "10Hz bandwidth"
+                config MPU6050_DLPF_5HZ
+                    bool "5Hz bandwidth"
+            endchoice
+            
+            config MPU6050_ENABLE_CALIBRATION
+                bool "Enable Auto-Calibration on Startup"
+                default y
+                help
+                    Automatically calibrate sensor offsets during initialization.
+                    Sensor must be stationary during calibration.
+            
+            config MPU6050_CALIBRATION_SAMPLES
+                int "Calibration Sample Count"
+                depends on MPU6050_ENABLE_CALIBRATION
+                range 100 5000
+                default 1000
+                help
+                    Number of samples to collect during calibration.
+                    More samples = better accuracy but longer calibration time.
+            
+            config MPU6050_ENABLE_STATISTICS
+                bool "Enable Performance Statistics"
+                default y
+                help
+                    Track sensor performance statistics (success rate, errors, etc.).
+            
+            config MPU6050_ENABLE_DEBUG_LOGGING
+                bool "Enable Debug Logging"
+                default n
+                help
+                    Enable detailed debug logging for MPU6050 operations.
+                    Useful for development and troubleshooting.
+        
+        endmenu
+                
+    endmenu
+    
+    menu "Storage Configuration"
+        
+        config SD_CARD_SPI_CS_PIN
+            int "SD Card SPI CS Pin"
+            range 0 39
+            default 5
+            help
+                GPIO pin number for SD card SPI chip select.
+        
+        config SD_CARD_SPI_MOSI_PIN
+            int "SD Card SPI MOSI Pin"
+            range 0 39
+            default 23
+            help
+                GPIO pin number for SD card SPI MOSI line.
+        
+        config SD_CARD_SPI_MISO_PIN
+            int "SD Card SPI MISO Pin"
+            range 0 39
+            default 19
+            help
+                GPIO pin number for SD card SPI MISO line.
+        
+        config SD_CARD_SPI_CLK_PIN
+            int "SD Card SPI CLK Pin"
+            range 0 39
+            default 18
+            help
+                GPIO pin number for SD card SPI clock line.
+                
+    endmenu
+    
+    menu "Network Configuration"
+        
+        config WIFI_SSID
+            string "WiFi SSID"
+            default "your_wifi_ssid"
+            help
+                WiFi network name (SSID) to connect to.
+        
+        config WIFI_PASSWORD
+            string "WiFi Password"
+            default "your_wifi_password"
+            help
+                WiFi network password.
+        
+        config MQTT_BROKER_URI
+            string "MQTT Broker URI"
+            default "mqtt://mqtt.broker.address:1883"
+            help
+                MQTT broker URI (e.g., mqtt://broker.hivemq.com:1883).
+        
+        config MQTT_TOPIC_PREFIX
+            string "MQTT Topic Prefix"
+            default "smart_logger"
+            help
+                Prefix for MQTT topics (e.g., smart_logger/sensor_data).
+                
+    endmenu
+    
+    menu "Application Settings"
+        
+        config SENSOR_READ_INTERVAL_MS
+            int "Sensor Reading Interval (ms)"
+            range 1000 300000
+            default 5000
+            help
+                Interval between sensor readings in milliseconds.
+        
+        config DATA_LOG_INTERVAL_MS
+            int "Data Logging Interval (ms)"
+            range 1000 3600000
+            default 10000
+            help
+                Interval between data logging to SD card in milliseconds.
+        
+        config MQTT_PUBLISH_INTERVAL_MS
+            int "MQTT Publish Interval (ms)"
+            range 1000 3600000
+            default 30000
+            help
+                Interval between MQTT data publishing in milliseconds.
+                
+    endmenu
+    
+endmenu

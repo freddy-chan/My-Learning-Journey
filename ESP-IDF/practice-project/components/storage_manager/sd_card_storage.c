@@ -333,49 +333,19 @@ esp_err_t sd_card_create_log_file(sd_card_handle_t handle, const char *filename)
         return ESP_ERR_INVALID_ARG;
     }
     
-    // Create filepath with short filename fallback for FAT compatibility
+    // Create filepath
     char filepath[128];
-    char short_filename[13]; // 8.3 format + null terminator
-    
-    // Generate short filename if needed
-    const char *extension = strrchr(filename, '.');
-    if (extension && strlen(extension) <= 5) { // .ext format
-        // Extract name part (before extension)
-        int name_len = extension - filename;
-        if (name_len > 8) name_len = 8;
-        
-        // Copy name part (max 8 chars)
-        int copy_len = (name_len < 8) ? name_len : 8;
-        strncpy(short_filename, filename, copy_len);
-        short_filename[copy_len] = '\0';
-        
-        // Add extension (max 4 chars including dot)
-        strncat(short_filename, extension, 4);
-    } else {
-        // No extension or invalid extension, use first 8 chars
-        int copy_len = (strlen(filename) < 8) ? strlen(filename) : 8;
-        strncpy(short_filename, filename, copy_len);
-        short_filename[copy_len] = '\0';
-        strcat(short_filename, ".CSV");
-    }
-    
-    // Try with original filename first (for systems with LFN enabled)
     int path_len = snprintf(filepath, sizeof(filepath), "/sdcard/%s", filename);
     if (path_len >= sizeof(filepath)) {
-        // Fallback to short filename if original path is too long
-        path_len = snprintf(filepath, sizeof(filepath), "/sdcard/%s", short_filename);
-        if (path_len >= sizeof(filepath)) {
-            ESP_LOGE(TAG, "File path too long: %s", filename);
-            xSemaphoreGive(ctx->mutex);
-            return ESP_ERR_INVALID_ARG;
-        }
-        ESP_LOGW(TAG, "Using short filename: %s", short_filename);
+        ESP_LOGE(TAG, "File path too long: %s", filename);
+        xSemaphoreGive(ctx->mutex);
+        return ESP_ERR_INVALID_ARG;
     }
     
     // Check if file already exists
     struct stat st;
     if (stat(filepath, &st) == 0) {
-        ESP_LOGI(TAG, "File %s already exists", filepath);
+        ESP_LOGI(TAG, "File %s already exists", filename);
         xSemaphoreGive(ctx->mutex);
         return ESP_OK;
     }
@@ -407,22 +377,18 @@ esp_err_t sd_card_create_log_file(sd_card_handle_t handle, const char *filename)
         switch (errno) {
             case EINVAL:
                 ESP_LOGE(TAG, "EINVAL: Invalid argument - likely filename issue with FAT filesystem");
-                // Try with short filename as fallback
-                if (strcmp(filename, short_filename) != 0) {
-                    char short_filepath[128];
-                    snprintf(short_filepath, sizeof(short_filepath), "/sdcard/%s", short_filename);
-                    ESP_LOGI(TAG, "Trying short filename: %s", short_filename);
-                    FILE *short_file = fopen(short_filepath, "w");
-                    if (short_file != NULL) {
-                        ESP_LOGI(TAG, "Successfully created file with short name: %s", short_filename);
-                        fprintf(short_file, "timestamp,temperature,humidity,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pressure,location\n");
-                        fclose(short_file);
-                        xSemaphoreGive(ctx->mutex);
-                        sd_card_update_stats(handle, true, SD_CARD_OK);
-                        return ESP_OK;
-                    } else {
-                        ESP_LOGE(TAG, "Short filename also failed, errno: %d (%s)", errno, strerror(errno));
-                    }
+                // Try with a simple short filename as a test
+                ESP_LOGI(TAG, "Trying with short filename LOG.CSV");
+                FILE *test_file = fopen("/sdcard/LOG.CSV", "w");
+                if (test_file != NULL) {
+                    ESP_LOGI(TAG, "Successfully created test file LOG.CSV");
+                    fprintf(test_file, "timestamp,temperature,humidity,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pressure,location\n");
+                    fclose(test_file);
+                    xSemaphoreGive(ctx->mutex);
+                    sd_card_update_stats(handle, true, SD_CARD_OK);
+                    return ESP_OK;
+                } else {
+                    ESP_LOGE(TAG, "Even short filename failed, errno: %d (%s)", errno, strerror(errno));
                 }
                 break;
             case EACCES:
@@ -465,7 +431,7 @@ esp_err_t sd_card_create_log_file(sd_card_handle_t handle, const char *filename)
     // Update statistics
     sd_card_update_stats(handle, true, SD_CARD_OK);
     
-    ESP_LOGI(TAG, "Created new log file: %s", filepath);
+    ESP_LOGI(TAG, "Created new log file: %s", filename);
     return ESP_OK;
 }
 
