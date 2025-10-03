@@ -565,11 +565,11 @@ void read_and_display_sensor_data(void) {
  * @param event The WiFi event that occurred
  * @param user_data User data (unused)
  */
-void wifi_event_callback(wifi_event_t event, void* user_data) {
+void wifi_event_callback(wifi_mgr_event_t event, void* user_data) {
     ESP_LOGI(TAG, "WiFi Event: %s", wifi_manager_event_to_string(event));
     
     switch (event) {
-        case WIFI_EVENT_CONNECTED:
+        case WIFI_MGR_EVENT_CONNECTED:
             ESP_LOGI(TAG, "WiFi connected, initializing MQTT client");
             // Start MQTT client when WiFi connects
             if (g_mqtt_handle) {
@@ -577,7 +577,7 @@ void wifi_event_callback(wifi_event_t event, void* user_data) {
             }
             break;
             
-        case WIFI_EVENT_DISCONNECTED:
+        case WIFI_MGR_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "WiFi disconnected, stopping MQTT client");
             // Stop MQTT client when WiFi disconnects
             if (g_mqtt_handle) {
@@ -585,7 +585,7 @@ void wifi_event_callback(wifi_event_t event, void* user_data) {
             }
             break;
             
-        case WIFI_EVENT_OFFLINE_MODE_ENTERED:
+        case WIFI_MGR_EVENT_OFFLINE_MODE_ENTERED:
             ESP_LOGI(TAG, "Entered offline mode");
             // Notify MQTT client of offline mode
             if (g_mqtt_handle) {
@@ -597,7 +597,7 @@ void wifi_event_callback(wifi_event_t event, void* user_data) {
             }
             break;
             
-        case WIFI_EVENT_OFFLINE_MODE_EXITED:
+        case WIFI_MGR_EVENT_OFFLINE_MODE_EXITED:
             ESP_LOGI(TAG, "Exited offline mode");
             // Notify MQTT client to exit offline mode
             if (g_mqtt_handle) {
@@ -623,22 +623,22 @@ void wifi_event_callback(wifi_event_t event, void* user_data) {
  * @param message Pointer to message data (if applicable)
  * @param user_data User data (unused)
  */
-void mqtt_event_callback(mqtt_event_t event, const mqtt_message_t* message, void* user_data) {
+void mqtt_event_callback(mqtt_mgr_event_t event, const mqtt_message_t* message, void* user_data) {
     ESP_LOGI(TAG, "MQTT Event: %s", mqtt_client_event_to_string(event));
     
     switch (event) {
-        case MQTT_EVENT_CONNECTED:
+        case MQTT_MGR_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT connected, subscribing to topics");
             // Subscribe to relevant topics
-            mqtt_client_subscribe(g_mqtt_handle, "smart_logger/commands", MQTT_QOS_AT_LEAST_ONCE);
+            mqtt_client_subscribe(g_mqtt_handle, "smart_logger/commands", MQTT_MGR_QOS_AT_LEAST_ONCE);
             break;
             
-        case MQTT_EVENT_DATA_RECEIVED:
+        case MQTT_MGR_EVENT_DATA_RECEIVED:
             ESP_LOGI(TAG, "MQTT data received on topic: %s", message->topic);
             // Process received MQTT messages
             break;
             
-        case MQTT_EVENT_OFFLINE_SYNC_COMPLETED:
+        case MQTT_MGR_EVENT_OFFLINE_SYNC_COMPLETED:
             ESP_LOGI(TAG, "Completed synchronization of offline messages");
             break;
             
@@ -656,23 +656,23 @@ void mqtt_event_callback(mqtt_event_t event, const mqtt_message_t* message, void
  * @param progress Pointer to progress information (if applicable)
  * @param user_data User data (unused)
  */
-void ota_event_callback(ota_event_t event, const ota_progress_t* progress, void* user_data) {
+void ota_event_callback(ota_mgr_event_t event, const ota_progress_t* progress, void* user_data) {
     ESP_LOGI(TAG, "OTA Event: %s", ota_event_to_string(event));
     
     switch (event) {
-        case OTA_EVENT_UPDATE_AVAILABLE:
+        case OTA_MGR_EVENT_UPDATE_AVAILABLE:
             ESP_LOGI(TAG, "New firmware update available");
             // In a real application, you might want to automatically start the update
             // or notify the user based on your application requirements
             break;
             
-        case OTA_EVENT_UPDATE_SUCCESS:
+        case OTA_MGR_EVENT_UPDATE_SUCCESS:
             ESP_LOGI(TAG, "Firmware update successful, rebooting...");
             // In a real application, you would reboot here
             // esp_restart();
             break;
             
-        case OTA_EVENT_UPDATE_FAILED:
+        case OTA_MGR_EVENT_UPDATE_FAILED:
             ESP_LOGE(TAG, "Firmware update failed");
             break;
             
@@ -997,7 +997,7 @@ void app_main(void)
                                   "smart_logger/sensor_data", 
                                   payload, 
                                   strlen(payload), 
-                                  MQTT_QOS_AT_LEAST_ONCE, 
+                                  MQTT_MGR_QOS_AT_LEAST_ONCE, 
                                   false);
             }
         }

@@ -32,7 +32,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "esp_err.h"
-#include "system_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,15 +43,15 @@ extern "C" {
  * Represents the current status of the OTA update process
  */
 typedef enum {
-    OTA_STATE_IDLE = 0,             /**< No update in progress */
-    OTA_STATE_CHECKING,             /**< Checking for updates */
-    OTA_STATE_DOWNLOADING,          /**< Downloading update */
-    OTA_STATE_VERIFYING,            /**< Verifying update integrity */
-    OTA_STATE_FLASHING,             /**< Flashing update to device */
-    OTA_STATE_REBOOTING,            /**< Rebooting to apply update */
-    OTA_STATE_ROLLBACK,             /**< Rolling back to previous version */
-    OTA_STATE_OFFLINE_DEFERRED      /**< Update deferred due to offline mode */
-} ota_state_t;
+    OTA_MGR_STATE_IDLE = 0,             /**< No update in progress */
+    OTA_MGR_STATE_CHECKING,             /**< Checking for updates */
+    OTA_MGR_STATE_DOWNLOADING,          /**< Downloading update */
+    OTA_MGR_STATE_VERIFYING,            /**< Verifying update integrity */
+    OTA_MGR_STATE_FLASHING,             /**< Flashing update to device */
+    OTA_MGR_STATE_REBOOTING,            /**< Rebooting to apply update */
+    OTA_MGR_STATE_ROLLBACK,             /**< Rolling back to previous version */
+    OTA_MGR_STATE_OFFLINE_DEFERRED      /**< Update deferred due to offline mode */
+} ota_mgr_state_t;
 
 /**
  * @brief OTA update event types
@@ -60,24 +59,24 @@ typedef enum {
  * Events that can be reported by the OTA update component
  */
 typedef enum {
-    OTA_EVENT_CHECK_STARTED = 0,    /**< Started checking for updates */
-    OTA_EVENT_UPDATE_AVAILABLE,     /**< New update is available */
-    OTA_EVENT_DOWNLOAD_STARTED,     /**< Started downloading update */
-    OTA_EVENT_DOWNLOAD_PROGRESS,    /**< Download progress update */
-    OTA_EVENT_DOWNLOAD_COMPLETE,    /**< Download completed successfully */
-    OTA_EVENT_VERIFY_STARTED,       /**< Started verifying update */
-    OTA_EVENT_VERIFY_SUCCESS,       /**< Update verification successful */
-    OTA_EVENT_VERIFY_FAILED,        /**< Update verification failed */
-    OTA_EVENT_FLASH_STARTED,        /**< Started flashing update */
-    OTA_EVENT_FLASH_PROGRESS,       /**< Flash progress update */
-    OTA_EVENT_FLASH_COMPLETE,       /**< Flashing completed successfully */
-    OTA_EVENT_UPDATE_SUCCESS,       /**< Update completed successfully */
-    OTA_EVENT_UPDATE_FAILED,        /**< Update failed */
-    OTA_EVENT_ROLLBACK_STARTED,     /**< Started rollback process */
-    OTA_EVENT_ROLLBACK_COMPLETE,    /**< Rollback completed successfully */
-    OTA_EVENT_OFFLINE_DEFERRED,     /**< Update deferred due to offline mode */
-    OTA_EVENT_OFFLINE_RESUMED       /**< Resumed deferred update */
-} ota_event_t;
+    OTA_MGR_EVENT_CHECK_STARTED = 0,    /**< Started checking for updates */
+    OTA_MGR_EVENT_UPDATE_AVAILABLE,     /**< New update is available */
+    OTA_MGR_EVENT_DOWNLOAD_STARTED,     /**< Started downloading update */
+    OTA_MGR_EVENT_DOWNLOAD_PROGRESS,    /**< Download progress update */
+    OTA_MGR_EVENT_DOWNLOAD_COMPLETE,    /**< Download completed successfully */
+    OTA_MGR_EVENT_VERIFY_STARTED,       /**< Started verifying update */
+    OTA_MGR_EVENT_VERIFY_SUCCESS,       /**< Update verification successful */
+    OTA_MGR_EVENT_VERIFY_FAILED,        /**< Update verification failed */
+    OTA_MGR_EVENT_FLASH_STARTED,        /**< Started flashing update */
+    OTA_MGR_EVENT_FLASH_PROGRESS,       /**< Flash progress update */
+    OTA_MGR_EVENT_FLASH_COMPLETE,       /**< Flashing completed successfully */
+    OTA_MGR_EVENT_UPDATE_SUCCESS,       /**< Update completed successfully */
+    OTA_MGR_EVENT_UPDATE_FAILED,        /**< Update failed */
+    OTA_MGR_EVENT_ROLLBACK_STARTED,     /**< Started rollback process */
+    OTA_MGR_EVENT_ROLLBACK_COMPLETE,    /**< Rollback completed successfully */
+    OTA_MGR_EVENT_OFFLINE_DEFERRED,     /**< Update deferred due to offline mode */
+    OTA_MGR_EVENT_OFFLINE_RESUMED       /**< Resumed deferred update */
+} ota_mgr_event_t;
 
 /**
  * @brief OTA update configuration structure
@@ -105,7 +104,7 @@ typedef struct {
     size_t downloaded_size;         /**< Amount downloaded so far */
     size_t flashed_size;            /**< Amount flashed so far */
     uint8_t progress_percent;       /**< Progress percentage (0-100) */
-    ota_state_t current_state;      /**< Current update state */
+    ota_mgr_state_t current_state;      /**< Current update state */
 } ota_progress_t;
 
 /**
@@ -124,7 +123,7 @@ typedef void* ota_handle_t;
  * @param progress Pointer to progress information (if applicable)
  * @param user_data User-provided data pointer
  */
-typedef void (*ota_event_callback_t)(ota_event_t event, const ota_progress_t* progress, void* user_data);
+typedef void (*ota_mgr_event_callback_t)(ota_mgr_event_t event, const ota_progress_t* progress, void* user_data);
 
 /**
  * @brief Initialize OTA update component
@@ -197,7 +196,7 @@ esp_err_t ota_trigger_rollback(ota_handle_t handle);
  * @param handle OTA update handle
  * @return Current OTA state
  */
-ota_state_t ota_get_state(ota_handle_t handle);
+ota_mgr_state_t ota_get_state(ota_handle_t handle);
 
 /**
  * @brief Check if update is in progress
@@ -252,7 +251,7 @@ esp_err_t ota_is_deferred(ota_handle_t handle, bool* deferred);
  * @param user_data User data to pass to callback
  * @return ESP_OK on success, error code on failure
  */
-esp_err_t ota_register_callback(ota_handle_t handle, ota_event_callback_t callback, void* user_data);
+esp_err_t ota_register_callback(ota_handle_t handle, ota_mgr_event_callback_t callback, void* user_data);
 
 /**
  * @brief Unregister OTA event callback
@@ -263,7 +262,7 @@ esp_err_t ota_register_callback(ota_handle_t handle, ota_event_callback_t callba
  * @param callback Callback function to unregister
  * @return ESP_OK on success, error code on failure
  */
-esp_err_t ota_unregister_callback(ota_handle_t handle, ota_event_callback_t callback);
+esp_err_t ota_unregister_callback(ota_handle_t handle, ota_mgr_event_callback_t callback);
 
 /**
  * @brief Convert OTA event to string
@@ -273,7 +272,7 @@ esp_err_t ota_unregister_callback(ota_handle_t handle, ota_event_callback_t call
  * @param event OTA event to convert
  * @return String representation of the event
  */
-const char* ota_event_to_string(ota_event_t event);
+const char* ota_event_to_string(ota_mgr_event_t event);
 
 /**
  * @brief Convert OTA state to string
@@ -283,7 +282,7 @@ const char* ota_event_to_string(ota_event_t event);
  * @param state OTA state to convert
  * @return String representation of the state
  */
-const char* ota_state_to_string(ota_state_t state);
+const char* ota_state_to_string(ota_mgr_state_t state);
 
 #ifdef __cplusplus
 }

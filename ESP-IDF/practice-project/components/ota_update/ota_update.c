@@ -19,6 +19,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "esp_timer.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -41,8 +42,8 @@ static const char *TAG = "OTA_UPDATE";
  */
 struct ota_context {
     ota_config_t config;                    // Configuration settings
-    ota_state_t state;                      // Current update state
-    ota_event_callback_t callbacks[MAX_OTA_CALLBACKS]; // Registered callbacks
+    ota_mgr_state_t state;                      // Current update state
+    ota_mgr_event_callback_t callbacks[MAX_OTA_CALLBACKS]; // Registered callbacks
     void* callback_user_data[MAX_OTA_CALLBACKS];       // User data for callbacks
     ota_progress_t progress;                // Current progress information
     esp_ota_handle_t ota_handle;            // OTA handle for flashing
@@ -86,6 +87,12 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
         case HTTP_EVENT_DISCONNECTED:
             ESP_LOGD(TAG, "HTTP_EVENT_DISCONNECTED");
             break;
+        case HTTP_EVENT_REDIRECT:
+            ESP_LOGD(TAG, "HTTP_EVENT_REDIRECT");
+            break;
+        default:
+            // Handle any other cases
+            break;
     }
     return ESP_OK;
 }
@@ -98,7 +105,7 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
  * @param ctx OTA context
  * @param event OTA event to notify
  */
-static void notify_ota_event(struct ota_context* ctx, ota_event_t event)
+static void notify_ota_event(struct ota_context* ctx, ota_mgr_event_t event)
 {
     for (int i = 0; i < MAX_OTA_CALLBACKS; i++) {
         if (ctx->callbacks[i] != NULL) {
@@ -117,7 +124,7 @@ static void notify_ota_event(struct ota_context* ctx, ota_event_t event)
  * @param processed_size Processed size so far
  * @param state Current OTA state
  */
-static void update_progress(struct ota_context* ctx, size_t total_size, size_t processed_size, ota_state_t state)
+static void update_progress(struct ota_context* ctx, size_t total_size, size_t processed_size, ota_mgr_state_t state)
 {
     ctx->progress.total_size = total_size;
     ctx->progress.downloaded_size = processed_size;
@@ -133,9 +140,9 @@ static void update_progress(struct ota_context* ctx, size_t total_size, size_t p
     ctx->state = state;
     
     // Notify progress callbacks
-    if (state == OTA_STATE_DOWNLOADING || state == OTA_STATE_FLASHING) {
-        notify_ota_event(ctx, (state == OTA_STATE_DOWNLOADING) ? 
-                        OTA_EVENT_DOWNLOAD_PROGRESS : OTA_EVENT_FLASH_PROGRESS);
+    if (state == OTA_MGR_STATE_DOWNLOADING || state == OTA_MGR_STATE_FLASHING) {
+        notify_ota_event(ctx, (state == OTA_MGR_STATE_DOWNLOADING) ? 
+                        OTA_MGR_EVENT_DOWNLOAD_PROGRESS : OTA_MGR_EVENT_FLASH_PROGRESS);
     }
 }
 
@@ -153,8 +160,8 @@ static esp_err_t check_for_update(struct ota_context* ctx)
     // For now, we'll simulate the process
     
     ESP_LOGI(TAG, "Checking for firmware updates...");
-    ctx->state = OTA_STATE_CHECKING;
-    notify_ota_event(ctx, OTA_EVENT_CHECK_STARTED);
+    ctx->state = OTA_MGR_STATE_CHECKING;
+    notify_ota_event(ctx, OTA_MGR_EVENT_CHECK_STARTED);
     
     // Simulate network delay
     vTaskDelay(pdMS_TO_TICKS(2000));
@@ -164,11 +171,11 @@ static esp_err_t check_for_update(struct ota_context* ctx)
     
     if (update_available) {
         ESP_LOGI(TAG, "New firmware update available");
-        notify_ota_event(ctx, OTA_EVENT_UPDATE_AVAILABLE);
+        notify_ota_event(ctx, OTA_MGR_EVENT_UPDATE_AVAILABLE);
         return ESP_OK;
     } else {
         ESP_LOGI(TAG, "No firmware updates available");
-        ctx->state = OTA_STATE_IDLE;
+        ctx->state = OTA_MGR_STATE_IDLE;
         return ESP_OK;
     }
 }
@@ -185,14 +192,14 @@ static esp_err_t perform_update(struct ota_context* ctx)
 {
     if (ctx->deferred) {
         ESP_LOGI(TAG, "Update deferred due to offline mode");
-        ctx->state = OTA_STATE_OFFLINE_DEFERRED;
-        notify_ota_event(ctx, OTA_EVENT_OFFLINE_DEFERRED);
+        ctx->state = OTA_MGR_STATE_OFFLINE_DEFERRED;
+        notify_ota_event(ctx, OTA_MGR_EVENT_OFFLINE_DEFERRED);
         return ESP_OK;
     }
     
     ESP_LOGI(TAG, "Starting firmware update process");
-    ctx->state = OTA_STATE_DOWNLOADING;
-    notify_ota_event(ctx, OTA_EVENT_DOWNLOAD_STARTED);
+    ctx->state = OTA_MGR_STATE_DOWNLOADING;
+    notify_ota_event(ctx, OTA_MGR_EVENT_DOWNLOAD_STARTED);
     
     // Get running partition and next update partition
     const esp_partition_t* running = esp_ota_get_running_partition();
@@ -200,8 +207,8 @@ static esp_err_t perform_update(struct ota_context* ctx)
     
     if (running == NULL || update == NULL) {
         ESP_LOGE(TAG, "Failed to get partition information");
-        ctx->state = OTA_STATE_IDLE;
-        notify_ota_event(ctx, OTA_EVENT_UPDATE_FAILED);
+        ctx->state = OTA_MGR_STATE_IDLE;
+        notify_ota_event(ctx, OTA_MGR_EVENT_UPDATE_FAILED);
         return ESP_FAIL;
     }
     
@@ -214,8 +221,8 @@ static esp_err_t perform_update(struct ota_context* ctx)
     esp_err_t err = esp_ota_begin(update, OTA_WITH_SEQUENTIAL_WRITES, &ctx->ota_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
-        ctx->state = OTA_STATE_IDLE;
-        notify_ota_event(ctx, OTA_EVENT_UPDATE_FAILED);
+        ctx->state = OTA_MGR_STATE_IDLE;
+        notify_ota_event(ctx, OTA_MGR_EVENT_UPDATE_FAILED);
         return err;
     }
     
@@ -227,8 +234,8 @@ static esp_err_t perform_update(struct ota_context* ctx)
     if (buffer == NULL) {
         ESP_LOGE(TAG, "Failed to allocate download buffer");
         esp_ota_end(ctx->ota_handle);
-        ctx->state = OTA_STATE_IDLE;
-        notify_ota_event(ctx, OTA_EVENT_UPDATE_FAILED);
+        ctx->state = OTA_MGR_STATE_IDLE;
+        notify_ota_event(ctx, OTA_MGR_EVENT_UPDATE_FAILED);
         return ESP_ERR_NO_MEM;
     }
     
@@ -246,13 +253,13 @@ static esp_err_t perform_update(struct ota_context* ctx)
             ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(err));
             free(buffer);
             esp_ota_end(ctx->ota_handle);
-            ctx->state = OTA_STATE_IDLE;
-            notify_ota_event(ctx, OTA_EVENT_UPDATE_FAILED);
+            ctx->state = OTA_MGR_STATE_IDLE;
+            notify_ota_event(ctx, OTA_MGR_EVENT_UPDATE_FAILED);
             return err;
         }
         
         downloaded += chunk_size;
-        update_progress(ctx, total_size, downloaded, OTA_STATE_DOWNLOADING);
+        update_progress(ctx, total_size, downloaded, OTA_MGR_STATE_DOWNLOADING);
         
         // Simulate network delay
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -261,26 +268,26 @@ static esp_err_t perform_update(struct ota_context* ctx)
     free(buffer);
     
     ESP_LOGI(TAG, "Download completed successfully");
-    notify_ota_event(ctx, OTA_EVENT_DOWNLOAD_COMPLETE);
+    notify_ota_event(ctx, OTA_MGR_EVENT_DOWNLOAD_COMPLETE);
     
     // Verify firmware
     ESP_LOGI(TAG, "Verifying firmware integrity");
-    ctx->state = OTA_STATE_VERIFYING;
-    notify_ota_event(ctx, OTA_EVENT_VERIFY_STARTED);
+    ctx->state = OTA_MGR_STATE_VERIFYING;
+    notify_ota_event(ctx, OTA_MGR_EVENT_VERIFY_STARTED);
     
     // Simulate verification delay
     vTaskDelay(pdMS_TO_TICKS(1000));
     
     // In a real implementation, you would verify the firmware here
     ESP_LOGI(TAG, "Firmware verification successful");
-    notify_ota_event(ctx, OTA_EVENT_VERIFY_SUCCESS);
+    notify_ota_event(ctx, OTA_MGR_EVENT_VERIFY_SUCCESS);
     
     // Finish OTA process
     err = esp_ota_end(ctx->ota_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(err));
-        ctx->state = OTA_STATE_IDLE;
-        notify_ota_event(ctx, OTA_EVENT_UPDATE_FAILED);
+        ctx->state = OTA_MGR_STATE_IDLE;
+        notify_ota_event(ctx, OTA_MGR_EVENT_UPDATE_FAILED);
         return err;
     }
     
@@ -288,14 +295,14 @@ static esp_err_t perform_update(struct ota_context* ctx)
     err = esp_ota_set_boot_partition(update);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
-        ctx->state = OTA_STATE_IDLE;
-        notify_ota_event(ctx, OTA_EVENT_UPDATE_FAILED);
+        ctx->state = OTA_MGR_STATE_IDLE;
+        notify_ota_event(ctx, OTA_MGR_EVENT_UPDATE_FAILED);
         return err;
     }
     
     ESP_LOGI(TAG, "Firmware update completed successfully");
-    ctx->state = OTA_STATE_IDLE;
-    notify_ota_event(ctx, OTA_EVENT_UPDATE_SUCCESS);
+    ctx->state = OTA_MGR_STATE_IDLE;
+    notify_ota_event(ctx, OTA_MGR_EVENT_UPDATE_SUCCESS);
     
     return ESP_OK;
 }
@@ -334,13 +341,13 @@ esp_err_t ota_init(const ota_config_t* config, ota_handle_t* handle)
     ctx->config.check_interval_ms = config->check_interval_ms > 0 ? config->check_interval_ms : DEFAULT_CHECK_INTERVAL_MS;
     
     // Initialize state
-    ctx->state = OTA_STATE_IDLE;
+    ctx->state = OTA_MGR_STATE_IDLE;
     ctx->deferred = false;
     ctx->initialized = true;
     
     // Initialize progress
     memset(&ctx->progress, 0, sizeof(ota_progress_t));
-    ctx->progress.current_state = OTA_STATE_IDLE;
+    ctx->progress.current_state = OTA_MGR_STATE_IDLE;
     
     // Set global instance
     g_ota_context = ctx;
@@ -383,7 +390,7 @@ esp_err_t ota_check_for_updates(ota_handle_t handle, bool blocking)
         return ESP_ERR_INVALID_ARG;
     }
     
-    if (ctx->state != OTA_STATE_IDLE) {
+    if (ctx->state != OTA_MGR_STATE_IDLE) {
         ESP_LOGW(TAG, "OTA operation already in progress");
         return ESP_ERR_INVALID_STATE;
     }
@@ -408,7 +415,7 @@ esp_err_t ota_start_update(ota_handle_t handle, bool blocking)
         return ESP_ERR_INVALID_ARG;
     }
     
-    if (ctx->state != OTA_STATE_IDLE) {
+    if (ctx->state != OTA_MGR_STATE_IDLE) {
         ESP_LOGW(TAG, "OTA operation already in progress");
         return ESP_ERR_INVALID_STATE;
     }
@@ -433,13 +440,13 @@ esp_err_t ota_cancel_update(ota_handle_t handle)
         return ESP_ERR_INVALID_ARG;
     }
     
-    if (ctx->state == OTA_STATE_IDLE) {
+    if (ctx->state == OTA_MGR_STATE_IDLE) {
         ESP_LOGW(TAG, "No OTA operation in progress");
         return ESP_OK;
     }
     
     // Cancel the update process
-    ctx->state = OTA_STATE_IDLE;
+    ctx->state = OTA_MGR_STATE_IDLE;
     
     // In a real implementation, you would also cancel any ongoing network operations
     
@@ -457,8 +464,8 @@ esp_err_t ota_trigger_rollback(ota_handle_t handle)
     }
     
     ESP_LOGI(TAG, "Triggering rollback to previous firmware version");
-    ctx->state = OTA_STATE_ROLLBACK;
-    notify_ota_event(ctx, OTA_EVENT_ROLLBACK_STARTED);
+    ctx->state = OTA_MGR_STATE_ROLLBACK;
+    notify_ota_event(ctx, OTA_MGR_EVENT_ROLLBACK_STARTED);
     
     // In a real implementation, you would:
     // 1. Mark the current firmware as invalid
@@ -469,19 +476,19 @@ esp_err_t ota_trigger_rollback(ota_handle_t handle)
     vTaskDelay(pdMS_TO_TICKS(2000));
     
     ESP_LOGI(TAG, "Rollback completed successfully");
-    notify_ota_event(ctx, OTA_EVENT_ROLLBACK_COMPLETE);
+    notify_ota_event(ctx, OTA_MGR_EVENT_ROLLBACK_COMPLETE);
     
-    ctx->state = OTA_STATE_IDLE;
+    ctx->state = OTA_MGR_STATE_IDLE;
     return ESP_OK;
 }
 
-ota_state_t ota_get_state(ota_handle_t handle)
+ota_mgr_state_t ota_get_state(ota_handle_t handle)
 {
     struct ota_context* ctx = (struct ota_context*)handle;
     
     if (ctx == NULL || !ctx->initialized) {
         ESP_LOGE(TAG, "Invalid OTA handle");
-        return OTA_STATE_IDLE;
+        return OTA_MGR_STATE_IDLE;
     }
     
     return ctx->state;
@@ -495,7 +502,7 @@ bool ota_is_update_in_progress(ota_handle_t handle)
         return false;
     }
     
-    return (ctx->state != OTA_STATE_IDLE);
+    return (ctx->state != OTA_MGR_STATE_IDLE);
 }
 
 esp_err_t ota_get_progress(ota_handle_t handle, ota_progress_t* progress)
@@ -524,10 +531,10 @@ esp_err_t ota_set_deferred(ota_handle_t handle, bool deferred)
     
     if (deferred) {
         ESP_LOGI(TAG, "OTA updates deferred due to offline mode");
-        notify_ota_event(ctx, OTA_EVENT_OFFLINE_DEFERRED);
+        notify_ota_event(ctx, OTA_MGR_EVENT_OFFLINE_DEFERRED);
     } else {
         ESP_LOGI(TAG, "OTA updates enabled");
-        notify_ota_event(ctx, OTA_EVENT_OFFLINE_RESUMED);
+        notify_ota_event(ctx, OTA_MGR_EVENT_OFFLINE_RESUMED);
     }
     
     return ESP_OK;
@@ -546,7 +553,7 @@ esp_err_t ota_is_deferred(ota_handle_t handle, bool* deferred)
     return ESP_OK;
 }
 
-esp_err_t ota_register_callback(ota_handle_t handle, ota_event_callback_t callback, void* user_data)
+esp_err_t ota_register_callback(ota_handle_t handle, ota_mgr_event_callback_t callback, void* user_data)
 {
     struct ota_context* ctx = (struct ota_context*)handle;
     
@@ -569,7 +576,7 @@ esp_err_t ota_register_callback(ota_handle_t handle, ota_event_callback_t callba
     return ESP_ERR_NO_MEM;
 }
 
-esp_err_t ota_unregister_callback(ota_handle_t handle, ota_event_callback_t callback)
+esp_err_t ota_unregister_callback(ota_handle_t handle, ota_mgr_event_callback_t callback)
 {
     struct ota_context* ctx = (struct ota_context*)handle;
     
@@ -592,41 +599,41 @@ esp_err_t ota_unregister_callback(ota_handle_t handle, ota_event_callback_t call
     return ESP_ERR_NOT_FOUND;
 }
 
-const char* ota_event_to_string(ota_event_t event)
+const char* ota_event_to_string(ota_mgr_event_t event)
 {
     switch (event) {
-        case OTA_EVENT_CHECK_STARTED:       return "CHECK_STARTED";
-        case OTA_EVENT_UPDATE_AVAILABLE:    return "UPDATE_AVAILABLE";
-        case OTA_EVENT_DOWNLOAD_STARTED:    return "DOWNLOAD_STARTED";
-        case OTA_EVENT_DOWNLOAD_PROGRESS:   return "DOWNLOAD_PROGRESS";
-        case OTA_EVENT_DOWNLOAD_COMPLETE:   return "DOWNLOAD_COMPLETE";
-        case OTA_EVENT_VERIFY_STARTED:      return "VERIFY_STARTED";
-        case OTA_EVENT_VERIFY_SUCCESS:      return "VERIFY_SUCCESS";
-        case OTA_EVENT_VERIFY_FAILED:       return "VERIFY_FAILED";
-        case OTA_EVENT_FLASH_STARTED:       return "FLASH_STARTED";
-        case OTA_EVENT_FLASH_PROGRESS:      return "FLASH_PROGRESS";
-        case OTA_EVENT_FLASH_COMPLETE:      return "FLASH_COMPLETE";
-        case OTA_EVENT_UPDATE_SUCCESS:      return "UPDATE_SUCCESS";
-        case OTA_EVENT_UPDATE_FAILED:       return "UPDATE_FAILED";
-        case OTA_EVENT_ROLLBACK_STARTED:    return "ROLLBACK_STARTED";
-        case OTA_EVENT_ROLLBACK_COMPLETE:   return "ROLLBACK_COMPLETE";
-        case OTA_EVENT_OFFLINE_DEFERRED:    return "OFFLINE_DEFERRED";
-        case OTA_EVENT_OFFLINE_RESUMED:     return "OFFLINE_RESUMED";
+        case OTA_MGR_EVENT_CHECK_STARTED:       return "CHECK_STARTED";
+        case OTA_MGR_EVENT_UPDATE_AVAILABLE:    return "UPDATE_AVAILABLE";
+        case OTA_MGR_EVENT_DOWNLOAD_STARTED:    return "DOWNLOAD_STARTED";
+        case OTA_MGR_EVENT_DOWNLOAD_PROGRESS:   return "DOWNLOAD_PROGRESS";
+        case OTA_MGR_EVENT_DOWNLOAD_COMPLETE:   return "DOWNLOAD_COMPLETE";
+        case OTA_MGR_EVENT_VERIFY_STARTED:      return "VERIFY_STARTED";
+        case OTA_MGR_EVENT_VERIFY_SUCCESS:      return "VERIFY_SUCCESS";
+        case OTA_MGR_EVENT_VERIFY_FAILED:       return "VERIFY_FAILED";
+        case OTA_MGR_EVENT_FLASH_STARTED:       return "FLASH_STARTED";
+        case OTA_MGR_EVENT_FLASH_PROGRESS:      return "FLASH_PROGRESS";
+        case OTA_MGR_EVENT_FLASH_COMPLETE:      return "FLASH_COMPLETE";
+        case OTA_MGR_EVENT_UPDATE_SUCCESS:      return "UPDATE_SUCCESS";
+        case OTA_MGR_EVENT_UPDATE_FAILED:       return "UPDATE_FAILED";
+        case OTA_MGR_EVENT_ROLLBACK_STARTED:    return "ROLLBACK_STARTED";
+        case OTA_MGR_EVENT_ROLLBACK_COMPLETE:   return "ROLLBACK_COMPLETE";
+        case OTA_MGR_EVENT_OFFLINE_DEFERRED:    return "OFFLINE_DEFERRED";
+        case OTA_MGR_EVENT_OFFLINE_RESUMED:     return "OFFLINE_RESUMED";
         default:                           return "UNKNOWN";
     }
 }
 
-const char* ota_state_to_string(ota_state_t state)
+const char* ota_state_to_string(ota_mgr_state_t state)
 {
     switch (state) {
-        case OTA_STATE_IDLE:            return "IDLE";
-        case OTA_STATE_CHECKING:        return "CHECKING";
-        case OTA_STATE_DOWNLOADING:     return "DOWNLOADING";
-        case OTA_STATE_VERIFYING:       return "VERIFYING";
-        case OTA_STATE_FLASHING:        return "FLASHING";
-        case OTA_STATE_REBOOTING:       return "REBOOTING";
-        case OTA_STATE_ROLLBACK:        return "ROLLBACK";
-        case OTA_STATE_OFFLINE_DEFERRED: return "OFFLINE_DEFERRED";
+        case OTA_MGR_STATE_IDLE:            return "IDLE";
+        case OTA_MGR_STATE_CHECKING:        return "CHECKING";
+        case OTA_MGR_STATE_DOWNLOADING:     return "DOWNLOADING";
+        case OTA_MGR_STATE_VERIFYING:       return "VERIFYING";
+        case OTA_MGR_STATE_FLASHING:        return "FLASHING";
+        case OTA_MGR_STATE_REBOOTING:       return "REBOOTING";
+        case OTA_MGR_STATE_ROLLBACK:        return "ROLLBACK";
+        case OTA_MGR_STATE_OFFLINE_DEFERRED: return "OFFLINE_DEFERRED";
         default:                       return "UNKNOWN";
     }
 }

@@ -31,7 +31,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "esp_err.h"
-#include "system_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,12 +42,12 @@ extern "C" {
  * Represents the current state of the WiFi connection
  */
 typedef enum {
-    WIFI_STATE_DISCONNECTED = 0,    /**< Not connected to any network */
-    WIFI_STATE_CONNECTING,          /**< In the process of connecting */
-    WIFI_STATE_CONNECTED,           /**< Successfully connected to network */
-    WIFI_STATE_CONNECTION_LOST,     /**< Connection lost, attempting recovery */
-    WIFI_STATE_OFFLINE_MODE         /**< Deliberately in offline mode */
-} wifi_connection_state_t;
+    WIFI_MGR_STATE_DISCONNECTED = 0,    /**< Not connected to any network */
+    WIFI_MGR_STATE_CONNECTING,          /**< In the process of connecting */
+    WIFI_MGR_STATE_CONNECTED,           /**< Successfully connected to network */
+    WIFI_MGR_STATE_CONNECTION_LOST,     /**< Connection lost, attempting recovery */
+    WIFI_MGR_STATE_OFFLINE_MODE         /**< Deliberately in offline mode */
+} wifi_mgr_connection_state_t;
 
 /**
  * @brief WiFi event types
@@ -56,14 +55,14 @@ typedef enum {
  * Events that can be reported by the WiFi manager
  */
 typedef enum {
-    WIFI_EVENT_CONNECTED = 0,       /**< Successfully connected to WiFi */
-    WIFI_EVENT_DISCONNECTED,        /**< Disconnected from WiFi */
-    WIFI_EVENT_CONNECTION_FAILED,   /**< Failed to connect to WiFi */
-    WIFI_EVENT_OFFLINE_MODE_ENTERED,/**< Entered offline mode */
-    WIFI_EVENT_OFFLINE_MODE_EXITED, /**< Exited offline mode */
-    WIFI_EVENT_GOT_IP,              /**< Obtained IP address */
-    WIFI_EVENT_LOST_IP              /**< Lost IP address */
-} wifi_event_t;
+    WIFI_MGR_EVENT_CONNECTED = 0,       /**< Successfully connected to WiFi */
+    WIFI_MGR_EVENT_DISCONNECTED,        /**< Disconnected from WiFi */
+    WIFI_MGR_EVENT_CONNECTION_FAILED,   /**< Failed to connect to WiFi */
+    WIFI_MGR_EVENT_OFFLINE_MODE_ENTERED,/**< Entered offline mode */
+    WIFI_MGR_EVENT_OFFLINE_MODE_EXITED, /**< Exited offline mode */
+    WIFI_MGR_EVENT_GOT_IP,              /**< Obtained IP address */
+    WIFI_MGR_EVENT_LOST_IP              /**< Lost IP address */
+} wifi_mgr_event_t;
 
 /**
  * @brief WiFi manager configuration structure
@@ -94,7 +93,7 @@ typedef void* wifi_manager_handle_t;
  * @param event The WiFi event that occurred
  * @param user_data User-provided data pointer
  */
-typedef void (*wifi_event_callback_t)(wifi_event_t event, void* user_data);
+typedef void (*wifi_mgr_event_callback_t)(wifi_mgr_event_t event, void* user_data);
 
 /**
  * @brief Initialize WiFi manager
@@ -169,7 +168,7 @@ esp_err_t wifi_manager_exit_offline_mode(wifi_manager_handle_t handle);
  * @param handle WiFi manager handle
  * @return Current WiFi connection state
  */
-wifi_connection_state_t wifi_manager_get_state(wifi_manager_handle_t handle);
+wifi_mgr_connection_state_t wifi_manager_get_state(wifi_manager_handle_t handle);
 
 /**
  * @brief Check if device is connected to WiFi
@@ -225,7 +224,7 @@ esp_err_t wifi_manager_get_ip_info(wifi_manager_handle_t handle, char* ip_addr, 
  * @param user_data User data to pass to callback
  * @return ESP_OK on success, error code on failure
  */
-esp_err_t wifi_manager_register_callback(wifi_manager_handle_t handle, wifi_event_callback_t callback, void* user_data);
+esp_err_t wifi_manager_register_callback(wifi_manager_handle_t handle, wifi_mgr_event_callback_t callback, void* user_data);
 
 /**
  * @brief Unregister WiFi event callback
@@ -236,7 +235,7 @@ esp_err_t wifi_manager_register_callback(wifi_manager_handle_t handle, wifi_even
  * @param callback Callback function to unregister
  * @return ESP_OK on success, error code on failure
  */
-esp_err_t wifi_manager_unregister_callback(wifi_manager_handle_t handle, wifi_event_callback_t callback);
+esp_err_t wifi_manager_unregister_callback(wifi_manager_handle_t handle, wifi_mgr_event_callback_t callback);
 
 /**
  * @brief Convert WiFi event to string
@@ -246,7 +245,7 @@ esp_err_t wifi_manager_unregister_callback(wifi_manager_handle_t handle, wifi_ev
  * @param event WiFi event to convert
  * @return String representation of the event
  */
-const char* wifi_manager_event_to_string(wifi_event_t event);
+const char* wifi_manager_event_to_string(wifi_mgr_event_t event);
 
 /**
  * @brief Convert WiFi connection state to string
@@ -256,7 +255,7 @@ const char* wifi_manager_event_to_string(wifi_event_t event);
  * @param state WiFi connection state to convert
  * @return String representation of the state
  */
-const char* wifi_manager_state_to_string(wifi_connection_state_t state);
+const char* wifi_manager_state_to_string(wifi_mgr_connection_state_t state);
 
 #ifdef __cplusplus
 }

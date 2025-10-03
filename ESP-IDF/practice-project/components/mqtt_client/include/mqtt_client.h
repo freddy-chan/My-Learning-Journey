@@ -32,7 +32,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "esp_err.h"
-#include "system_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,12 +43,12 @@ extern "C" {
  * Represents the current state of the MQTT client connection
  */
 typedef enum {
-    MQTT_STATE_DISCONNECTED = 0,    /**< Not connected to broker */
-    MQTT_STATE_CONNECTING,          /**< In the process of connecting */
-    MQTT_STATE_CONNECTED,           /**< Successfully connected to broker */
-    MQTT_STATE_CONNECTION_LOST,     /**< Connection lost, attempting recovery */
-    MQTT_STATE_OFFLINE_QUEUING      /**< Operating in offline mode with message queuing */
-} mqtt_connection_state_t;
+    MQTT_MGR_STATE_DISCONNECTED = 0,    /**< Not connected to broker */
+    MQTT_MGR_STATE_CONNECTING,          /**< In the process of connecting */
+    MQTT_MGR_STATE_CONNECTED,           /**< Successfully connected to broker */
+    MQTT_MGR_STATE_CONNECTION_LOST,     /**< Connection lost, attempting recovery */
+    MQTT_MGR_STATE_OFFLINE_QUEUING      /**< Operating in offline mode with message queuing */
+} mqtt_mgr_connection_state_t;
 
 /**
  * @brief MQTT Quality of Service levels
@@ -57,10 +56,10 @@ typedef enum {
  * Defines the MQTT QoS levels for message delivery
  */
 typedef enum {
-    MQTT_QOS_AT_MOST_ONCE = 0,      /**< At most once delivery (0) */
-    MQTT_QOS_AT_LEAST_ONCE = 1,     /**< At least once delivery (1) */
-    MQTT_QOS_EXACTLY_ONCE = 2       /**< Exactly once delivery (2) */
-} mqtt_qos_t;
+    MQTT_MGR_QOS_AT_MOST_ONCE = 0,      /**< At most once delivery (0) */
+    MQTT_MGR_QOS_AT_LEAST_ONCE = 1,     /**< At least once delivery (1) */
+    MQTT_MGR_QOS_EXACTLY_ONCE = 2       /**< Exactly once delivery (2) */
+} mqtt_mgr_qos_t;
 
 /**
  * @brief MQTT event types
@@ -68,15 +67,15 @@ typedef enum {
  * Events that can be reported by the MQTT client
  */
 typedef enum {
-    MQTT_EVENT_CONNECTED = 0,       /**< Successfully connected to broker */
-    MQTT_EVENT_DISCONNECTED,        /**< Disconnected from broker */
-    MQTT_EVENT_CONNECTION_FAILED,   /**< Failed to connect to broker */
-    MQTT_EVENT_DATA_RECEIVED,       /**< Data received on subscribed topic */
-    MQTT_EVENT_PUBLISHED,           /**< Message successfully published */
-    MQTT_EVENT_OFFLINE_QUEUING_STARTED, /**< Started offline message queuing */
-    MQTT_EVENT_OFFLINE_SYNC_STARTED,/**< Started synchronization of queued messages */
-    MQTT_EVENT_OFFLINE_SYNC_COMPLETED /**< Completed synchronization of queued messages */
-} mqtt_event_t;
+    MQTT_MGR_EVENT_CONNECTED = 0,       /**< Successfully connected to broker */
+    MQTT_MGR_EVENT_DISCONNECTED,        /**< Disconnected from broker */
+    MQTT_MGR_EVENT_CONNECTION_FAILED,   /**< Failed to connect to broker */
+    MQTT_MGR_EVENT_DATA_RECEIVED,       /**< Data received on subscribed topic */
+    MQTT_MGR_EVENT_PUBLISHED,           /**< Message successfully published */
+    MQTT_MGR_EVENT_OFFLINE_QUEUING_STARTED, /**< Started offline message queuing */
+    MQTT_MGR_EVENT_OFFLINE_SYNC_STARTED,/**< Started synchronization of queued messages */
+    MQTT_MGR_EVENT_OFFLINE_SYNC_COMPLETED /**< Completed synchronization of queued messages */
+} mqtt_mgr_event_t;
 
 /**
  * @brief MQTT client configuration structure
@@ -105,7 +104,7 @@ typedef struct {
     const char* topic;              /**< Topic string */
     const char* payload;            /**< Payload data */
     size_t payload_len;             /**< Length of payload data */
-    mqtt_qos_t qos;                 /**< Quality of Service level */
+    mqtt_mgr_qos_t qos;                 /**< Quality of Service level */
     bool retain;                    /**< Retain flag */
     uint16_t message_id;            /**< Message identifier (for QoS > 0) */
 } mqtt_message_t;
@@ -126,7 +125,7 @@ typedef void* mqtt_client_handle_t;
  * @param message Pointer to message data (if applicable)
  * @param user_data User-provided data pointer
  */
-typedef void (*mqtt_event_callback_t)(mqtt_event_t event, const mqtt_message_t* message, void* user_data);
+typedef void (*mqtt_mgr_event_callback_t)(mqtt_mgr_event_t event, const mqtt_message_t* message, void* user_data);
 
 /**
  * @brief Initialize MQTT client
@@ -187,7 +186,7 @@ esp_err_t mqtt_client_disconnect(mqtt_client_handle_t handle);
  * @return ESP_OK on success, error code on failure
  */
 esp_err_t mqtt_client_publish(mqtt_client_handle_t handle, const char* topic, const char* data, 
-                             size_t len, mqtt_qos_t qos, bool retain);
+                             size_t len, mqtt_mgr_qos_t qos, bool retain);
 
 /**
  * @brief Subscribe to MQTT topic
@@ -199,7 +198,7 @@ esp_err_t mqtt_client_publish(mqtt_client_handle_t handle, const char* topic, co
  * @param qos Quality of Service level
  * @return ESP_OK on success, error code on failure
  */
-esp_err_t mqtt_client_subscribe(mqtt_client_handle_t handle, const char* topic, mqtt_qos_t qos);
+esp_err_t mqtt_client_subscribe(mqtt_client_handle_t handle, const char* topic, mqtt_mgr_qos_t qos);
 
 /**
  * @brief Unsubscribe from MQTT topic
@@ -242,7 +241,7 @@ esp_err_t mqtt_client_exit_offline_mode(mqtt_client_handle_t handle);
  * @param handle MQTT client handle
  * @return Current MQTT connection state
  */
-mqtt_connection_state_t mqtt_client_get_state(mqtt_client_handle_t handle);
+mqtt_mgr_connection_state_t mqtt_client_get_state(mqtt_client_handle_t handle);
 
 /**
  * @brief Check if client is connected to MQTT broker
@@ -285,7 +284,7 @@ esp_err_t mqtt_client_clear_queued_messages(mqtt_client_handle_t handle);
  * @param user_data User data to pass to callback
  * @return ESP_OK on success, error code on failure
  */
-esp_err_t mqtt_client_register_callback(mqtt_client_handle_t handle, mqtt_event_callback_t callback, void* user_data);
+esp_err_t mqtt_client_register_callback(mqtt_client_handle_t handle, mqtt_mgr_event_callback_t callback, void* user_data);
 
 /**
  * @brief Unregister MQTT event callback
@@ -296,7 +295,7 @@ esp_err_t mqtt_client_register_callback(mqtt_client_handle_t handle, mqtt_event_
  * @param callback Callback function to unregister
  * @return ESP_OK on success, error code on failure
  */
-esp_err_t mqtt_client_unregister_callback(mqtt_client_handle_t handle, mqtt_event_callback_t callback);
+esp_err_t mqtt_client_unregister_callback(mqtt_client_handle_t handle, mqtt_mgr_event_callback_t callback);
 
 /**
  * @brief Convert MQTT event to string
@@ -306,7 +305,7 @@ esp_err_t mqtt_client_unregister_callback(mqtt_client_handle_t handle, mqtt_even
  * @param event MQTT event to convert
  * @return String representation of the event
  */
-const char* mqtt_client_event_to_string(mqtt_event_t event);
+const char* mqtt_client_event_to_string(mqtt_mgr_event_t event);
 
 /**
  * @brief Convert MQTT connection state to string
@@ -316,7 +315,7 @@ const char* mqtt_client_event_to_string(mqtt_event_t event);
  * @param state MQTT connection state to convert
  * @return String representation of the state
  */
-const char* mqtt_client_state_to_string(mqtt_connection_state_t state);
+const char* mqtt_client_state_to_string(mqtt_mgr_connection_state_t state);
 
 #ifdef __cplusplus
 }

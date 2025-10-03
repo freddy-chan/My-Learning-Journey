@@ -4,8 +4,7 @@
 idf_component_register(
     SRCS "ota_update.c"                 # Source files to compile
     INCLUDE_DIRS "include"             # Public header directories
-    REQUIRES "system_config"           # Dependencies on other components
-             "app_update"
+    REQUIRES "app_update"
              "esp_http_client"
              "esp_https_ota"
              "esp_wifi"

@@ -25,9 +25,9 @@
 static const char *TAG = "WIFI_MGR";
 
 // WiFi event bits
-#define WIFI_CONNECTED_BIT BIT0
-#define WIFI_FAIL_BIT      BIT1
-#define WIFI_DISCONNECTED_BIT BIT2
+#define WIFI_MGR_CONNECTED_BIT BIT0
+#define WIFI_MGR_FAIL_BIT      BIT1
+#define WIFI_MGR_DISCONNECTED_BIT BIT2
 
 // Maximum number of registered callbacks
 #define MAX_WIFI_CALLBACKS 8
@@ -39,10 +39,10 @@ static const char *TAG = "WIFI_MGR";
  */
 struct wifi_manager_context {
     wifi_manager_config_t config;              // Configuration settings
-    wifi_connection_state_t state;             // Current connection state
+    wifi_mgr_connection_state_t state;         // Current connection state
     esp_netif_t *netif;                        // Network interface
     EventGroupHandle_t wifi_event_group;       // Event group for synchronization
-    wifi_event_callback_t callbacks[MAX_WIFI_CALLBACKS]; // Registered callbacks
+    wifi_mgr_event_callback_t callbacks[MAX_WIFI_CALLBACKS]; // Registered callbacks
     void* callback_user_data[MAX_WIFI_CALLBACKS];        // User data for callbacks
     uint8_t retry_count;                       // Current retry count
     bool offline_mode;                         // Offline mode flag
@@ -78,12 +78,12 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                 
             case WIFI_EVENT_STA_DISCONNECTED:
                 ESP_LOGI(TAG, "Disconnected from WiFi");
-                ctx->state = WIFI_STATE_DISCONNECTED;
+                ctx->state = WIFI_MGR_STATE_DISCONNECTED;
                 
                 // Notify callbacks
                 for (int i = 0; i < MAX_WIFI_CALLBACKS; i++) {
                     if (ctx->callbacks[i] != NULL) {
-                        ctx->callbacks[i](WIFI_EVENT_DISCONNECTED, ctx->callback_user_data[i]);
+                        ctx->callbacks[i](WIFI_MGR_EVENT_DISCONNECTED, ctx->callback_user_data[i]);
                     }
                 }
                 
@@ -91,17 +91,17 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                 if (ctx->config.auto_reconnect && !ctx->offline_mode) {
                     if (ctx->retry_count < ctx->config.max_retry_count) {
                         ctx->retry_count++;
-                        ctx->state = WIFI_STATE_CONNECTING;
+                        ctx->state = WIFI_MGR_STATE_CONNECTING;
                         ESP_LOGI(TAG, "Attempting to reconnect (attempt %d/%d)", 
                                 ctx->retry_count, ctx->config.max_retry_count);
                         vTaskDelay(pdMS_TO_TICKS(ctx->config.retry_interval_ms));
                         esp_wifi_connect();
                     } else {
                         ESP_LOGE(TAG, "Failed to connect after %d attempts", ctx->config.max_retry_count);
-                        xEventGroupSetBits(ctx->wifi_event_group, WIFI_FAIL_BIT);
+                        xEventGroupSetBits(ctx->wifi_event_group, WIFI_MGR_FAIL_BIT);
                     }
                 } else {
-                    xEventGroupSetBits(ctx->wifi_event_group, WIFI_DISCONNECTED_BIT);
+                    xEventGroupSetBits(ctx->wifi_event_group, WIFI_MGR_DISCONNECTED_BIT);
                 }
                 break;
                 
@@ -114,14 +114,14 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                 ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
                 ESP_LOGI(TAG, "Got IP:" IPSTR, IP2STR(&event->ip_info.ip));
                 ctx->retry_count = 0;
-                ctx->state = WIFI_STATE_CONNECTED;
-                xEventGroupSetBits(ctx->wifi_event_group, WIFI_CONNECTED_BIT);
+                ctx->state = WIFI_MGR_STATE_CONNECTED;
+                xEventGroupSetBits(ctx->wifi_event_group, WIFI_MGR_CONNECTED_BIT);
                 
                 // Notify callbacks
                 for (int i = 0; i < MAX_WIFI_CALLBACKS; i++) {
                     if (ctx->callbacks[i] != NULL) {
-                        ctx->callbacks[i](WIFI_EVENT_GOT_IP, ctx->callback_user_data[i]);
-                        ctx->callbacks[i](WIFI_EVENT_CONNECTED, ctx->callback_user_data[i]);
+                        ctx->callbacks[i](WIFI_MGR_EVENT_GOT_IP, ctx->callback_user_data[i]);
+                        ctx->callbacks[i](WIFI_MGR_EVENT_CONNECTED, ctx->callback_user_data[i]);
                     }
                 }
                 break;
@@ -246,7 +246,7 @@ esp_err_t wifi_manager_init(const wifi_manager_config_t* config, wifi_manager_ha
     ctx->config.auto_reconnect = config->auto_reconnect;
     
     // Initialize state
-    ctx->state = WIFI_STATE_DISCONNECTED;
+    ctx->state = WIFI_MGR_STATE_DISCONNECTED;
     ctx->offline_mode = false;
     ctx->retry_count = 0;
     ctx->initialized = true;
@@ -304,7 +304,7 @@ esp_err_t wifi_manager_deinit(wifi_manager_handle_t handle)
     }
     
     // Disconnect if connected
-    if (ctx->state == WIFI_STATE_CONNECTED) {
+    if (ctx->state == WIFI_MGR_STATE_CONNECTED) {
         esp_wifi_disconnect();
     }
     
@@ -350,38 +350,38 @@ esp_err_t wifi_manager_connect(wifi_manager_handle_t handle, bool blocking)
     }
     
     // Reset event group bits
-    xEventGroupClearBits(ctx->wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT | WIFI_DISCONNECTED_BIT);
+    xEventGroupClearBits(ctx->wifi_event_group, WIFI_MGR_CONNECTED_BIT | WIFI_MGR_FAIL_BIT | WIFI_MGR_DISCONNECTED_BIT);
     
     // Set state to connecting
-    ctx->state = WIFI_STATE_CONNECTING;
+    ctx->state = WIFI_MGR_STATE_CONNECTING;
     ctx->retry_count = 0;
     
     // Start connection
     esp_err_t ret = esp_wifi_connect();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initiate WiFi connection: %s", esp_err_to_name(ret));
-        ctx->state = WIFI_STATE_DISCONNECTED;
+        ctx->state = WIFI_MGR_STATE_DISCONNECTED;
         return ret;
     }
     
     // Wait for connection result if blocking
     if (blocking) {
         EventBits_t bits = xEventGroupWaitBits(ctx->wifi_event_group,
-                                              WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+                                              WIFI_MGR_CONNECTED_BIT | WIFI_MGR_FAIL_BIT,
                                               pdFALSE,
                                               pdFALSE,
                                               pdMS_TO_TICKS(ctx->config.connect_timeout_ms));
         
-        if (bits & WIFI_CONNECTED_BIT) {
+        if (bits & WIFI_MGR_CONNECTED_BIT) {
             ESP_LOGI(TAG, "Successfully connected to WiFi network");
             return ESP_OK;
-        } else if (bits & WIFI_FAIL_BIT) {
+        } else if (bits & WIFI_MGR_FAIL_BIT) {
             ESP_LOGE(TAG, "Failed to connect to WiFi network");
-            ctx->state = WIFI_STATE_DISCONNECTED;
+            ctx->state = WIFI_MGR_STATE_DISCONNECTED;
             return ESP_FAIL;
         } else {
             ESP_LOGE(TAG, "WiFi connection timeout");
-            ctx->state = WIFI_STATE_DISCONNECTED;
+            ctx->state = WIFI_MGR_STATE_DISCONNECTED;
             return ESP_ERR_TIMEOUT;
         }
     }
@@ -406,7 +406,7 @@ esp_err_t wifi_manager_disconnect(wifi_manager_handle_t handle)
     }
     
     // Update state
-    ctx->state = WIFI_STATE_DISCONNECTED;
+    ctx->state = WIFI_MGR_STATE_DISCONNECTED;
     ctx->offline_mode = false;
     
     return ESP_OK;
@@ -422,18 +422,18 @@ esp_err_t wifi_manager_enter_offline_mode(wifi_manager_handle_t handle)
     }
     
     // If already connected, disconnect
-    if (ctx->state == WIFI_STATE_CONNECTED) {
+    if (ctx->state == WIFI_MGR_STATE_CONNECTED) {
         esp_wifi_disconnect();
     }
     
     // Set offline mode flag
     ctx->offline_mode = true;
-    ctx->state = WIFI_STATE_OFFLINE_MODE;
+    ctx->state = WIFI_MGR_STATE_OFFLINE_MODE;
     
     // Notify callbacks
     for (int i = 0; i < MAX_WIFI_CALLBACKS; i++) {
         if (ctx->callbacks[i] != NULL) {
-            ctx->callbacks[i](WIFI_EVENT_OFFLINE_MODE_ENTERED, ctx->callback_user_data[i]);
+            ctx->callbacks[i](WIFI_MGR_EVENT_OFFLINE_MODE_ENTERED, ctx->callback_user_data[i]);
         }
     }
     
@@ -452,12 +452,12 @@ esp_err_t wifi_manager_exit_offline_mode(wifi_manager_handle_t handle)
     
     // Clear offline mode flag
     ctx->offline_mode = false;
-    ctx->state = WIFI_STATE_DISCONNECTED;
+    ctx->state = WIFI_MGR_STATE_DISCONNECTED;
     
     // Notify callbacks
     for (int i = 0; i < MAX_WIFI_CALLBACKS; i++) {
         if (ctx->callbacks[i] != NULL) {
-            ctx->callbacks[i](WIFI_EVENT_OFFLINE_MODE_EXITED, ctx->callback_user_data[i]);
+            ctx->callbacks[i](WIFI_MGR_EVENT_OFFLINE_MODE_EXITED, ctx->callback_user_data[i]);
         }
     }
     
@@ -465,13 +465,13 @@ esp_err_t wifi_manager_exit_offline_mode(wifi_manager_handle_t handle)
     return wifi_manager_connect(handle, false);
 }
 
-wifi_connection_state_t wifi_manager_get_state(wifi_manager_handle_t handle)
+wifi_mgr_connection_state_t wifi_manager_get_state(wifi_manager_handle_t handle)
 {
     struct wifi_manager_context* ctx = (struct wifi_manager_context*)handle;
     
     if (ctx == NULL || !ctx->initialized) {
         ESP_LOGE(TAG, "Invalid WiFi manager handle");
-        return WIFI_STATE_DISCONNECTED;
+        return WIFI_MGR_STATE_DISCONNECTED;
     }
     
     return ctx->state;
@@ -485,7 +485,7 @@ bool wifi_manager_is_connected(wifi_manager_handle_t handle)
         return false;
     }
     
-    return (ctx->state == WIFI_STATE_CONNECTED);
+    return (ctx->state == WIFI_MGR_STATE_CONNECTED);
 }
 
 bool wifi_manager_is_offline_mode(wifi_manager_handle_t handle)
@@ -508,7 +508,7 @@ esp_err_t wifi_manager_get_rssi(wifi_manager_handle_t handle, int32_t* rssi)
         return ESP_ERR_INVALID_ARG;
     }
     
-    if (ctx->state != WIFI_STATE_CONNECTED) {
+    if (ctx->state != WIFI_MGR_STATE_CONNECTED) {
         ESP_LOGE(TAG, "Not connected to WiFi");
         return ESP_ERR_INVALID_STATE;
     }
@@ -533,7 +533,7 @@ esp_err_t wifi_manager_get_ip_info(wifi_manager_handle_t handle, char* ip_addr, 
         return ESP_ERR_INVALID_ARG;
     }
     
-    if (ctx->state != WIFI_STATE_CONNECTED) {
+    if (ctx->state != WIFI_MGR_STATE_CONNECTED) {
         ESP_LOGE(TAG, "Not connected to WiFi");
         return ESP_ERR_INVALID_STATE;
     }
@@ -562,7 +562,7 @@ esp_err_t wifi_manager_get_ip_info(wifi_manager_handle_t handle, char* ip_addr, 
     return ESP_OK;
 }
 
-esp_err_t wifi_manager_register_callback(wifi_manager_handle_t handle, wifi_event_callback_t callback, void* user_data)
+esp_err_t wifi_manager_register_callback(wifi_manager_handle_t handle, wifi_mgr_event_callback_t callback, void* user_data)
 {
     struct wifi_manager_context* ctx = (struct wifi_manager_context*)handle;
     
@@ -585,7 +585,7 @@ esp_err_t wifi_manager_register_callback(wifi_manager_handle_t handle, wifi_even
     return ESP_ERR_NO_MEM;
 }
 
-esp_err_t wifi_manager_unregister_callback(wifi_manager_handle_t handle, wifi_event_callback_t callback)
+esp_err_t wifi_manager_unregister_callback(wifi_manager_handle_t handle, wifi_mgr_event_callback_t callback)
 {
     struct wifi_manager_context* ctx = (struct wifi_manager_context*)handle;
     
@@ -608,28 +608,28 @@ esp_err_t wifi_manager_unregister_callback(wifi_manager_handle_t handle, wifi_ev
     return ESP_ERR_NOT_FOUND;
 }
 
-const char* wifi_manager_event_to_string(wifi_event_t event)
+const char* wifi_manager_event_to_string(wifi_mgr_event_t event)
 {
     switch (event) {
-        case WIFI_EVENT_CONNECTED:          return "CONNECTED";
-        case WIFI_EVENT_DISCONNECTED:       return "DISCONNECTED";
-        case WIFI_EVENT_CONNECTION_FAILED:  return "CONNECTION_FAILED";
-        case WIFI_EVENT_OFFLINE_MODE_ENTERED: return "OFFLINE_MODE_ENTERED";
-        case WIFI_EVENT_OFFLINE_MODE_EXITED:  return "OFFLINE_MODE_EXITED";
-        case WIFI_EVENT_GOT_IP:             return "GOT_IP";
-        case WIFI_EVENT_LOST_IP:            return "LOST_IP";
+        case WIFI_MGR_EVENT_CONNECTED:          return "CONNECTED";
+        case WIFI_MGR_EVENT_DISCONNECTED:       return "DISCONNECTED";
+        case WIFI_MGR_EVENT_CONNECTION_FAILED:  return "CONNECTION_FAILED";
+        case WIFI_MGR_EVENT_OFFLINE_MODE_ENTERED: return "OFFLINE_MODE_ENTERED";
+        case WIFI_MGR_EVENT_OFFLINE_MODE_EXITED:  return "OFFLINE_MODE_EXITED";
+        case WIFI_MGR_EVENT_GOT_IP:             return "GOT_IP";
+        case WIFI_MGR_EVENT_LOST_IP:            return "LOST_IP";
         default:                            return "UNKNOWN";
     }
 }
 
-const char* wifi_manager_state_to_string(wifi_connection_state_t state)
+const char* wifi_manager_state_to_string(wifi_mgr_connection_state_t state)
 {
     switch (state) {
-        case WIFI_STATE_DISCONNECTED:       return "DISCONNECTED";
-        case WIFI_STATE_CONNECTING:         return "CONNECTING";
-        case WIFI_STATE_CONNECTED:          return "CONNECTED";
-        case WIFI_STATE_CONNECTION_LOST:    return "CONNECTION_LOST";
-        case WIFI_STATE_OFFLINE_MODE:       return "OFFLINE_MODE";
+        case WIFI_MGR_STATE_DISCONNECTED:       return "DISCONNECTED";
+        case WIFI_MGR_STATE_CONNECTING:         return "CONNECTING";
+        case WIFI_MGR_STATE_CONNECTED:          return "CONNECTED";
+        case WIFI_MGR_STATE_CONNECTION_LOST:    return "CONNECTION_LOST";
+        case WIFI_MGR_STATE_OFFLINE_MODE:       return "OFFLINE_MODE";
         default:                            return "UNKNOWN";
     }
 }

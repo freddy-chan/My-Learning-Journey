@@ -4,10 +4,8 @@
 idf_component_register(
     SRCS "wifi_manager.c"              # Source files to compile
     INCLUDE_DIRS "include"             # Public header directories
-    REQUIRES "system_config"           # Dependencies on other components
-             "esp_wifi"
+    REQUIRES "esp_wifi"
              "esp_event"
              "esp_netif"
-             "driver"
              "freertos"
 )

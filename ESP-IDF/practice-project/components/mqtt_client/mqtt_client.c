@@ -14,6 +14,7 @@
 #include "mqtt_client.h"
 #include "esp_log.h"
 #include "mqtt_client.h"
+#include "esp_mqtt_client.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -45,7 +46,7 @@ typedef struct {
     char* topic;                    // Topic string (dynamically allocated)
     char* payload;                  // Payload data (dynamically allocated)
     size_t payload_len;             // Length of payload data
-    mqtt_qos_t qos;                 // Quality of Service level
+    mqtt_mgr_qos_t qos;                 // Quality of Service level
     bool retain;                    // Retain flag
     uint64_t timestamp;             // Timestamp when message was queued
 } queued_message_t;
@@ -57,9 +58,9 @@ typedef struct {
  */
 struct mqtt_client_context {
     mqtt_client_config_t config;              // Configuration settings
-    mqtt_connection_state_t state;            // Current connection state
+    mqtt_mgr_connection_state_t state;            // Current connection state
     esp_mqtt_client_handle_t esp_mqtt_client; // ESP-IDF MQTT client handle
-    mqtt_event_callback_t callbacks[MAX_MQTT_CALLBACKS]; // Registered callbacks
+    mqtt_mgr_event_callback_t callbacks[MAX_MQTT_CALLBACKS]; // Registered callbacks
     void* callback_user_data[MAX_MQTT_CALLBACKS];        // User data for callbacks
     uint8_t retry_count;                      // Current retry count
     bool offline_mode;                        // Offline queuing mode flag
@@ -89,30 +90,30 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT connected");
-            ctx->state = MQTT_STATE_CONNECTED;
+            ctx->state = MQTT_MGR_STATE_CONNECTED;
             ctx->retry_count = 0;
             
             // Notify callbacks
             for (int i = 0; i < MAX_MQTT_CALLBACKS; i++) {
                 if (ctx->callbacks[i] != NULL) {
-                    ctx->callbacks[i](MQTT_EVENT_CONNECTED, NULL, ctx->callback_user_data[i]);
+                    ctx->callbacks[i](MQTT_MGR_EVENT_CONNECTED, NULL, ctx->callback_user_data[i]);
                 }
             }
             
             // If in offline mode, start synchronization
             if (ctx->offline_mode) {
-                mqtt_client_exit_offline_mode(ctx);
+                // We'll handle this in the main application
             }
             break;
             
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "MQTT disconnected");
-            ctx->state = MQTT_STATE_DISCONNECTED;
+            ctx->state = MQTT_MGR_STATE_DISCONNECTED;
             
             // Notify callbacks
             for (int i = 0; i < MAX_MQTT_CALLBACKS; i++) {
                 if (ctx->callbacks[i] != NULL) {
-                    ctx->callbacks[i](MQTT_EVENT_DISCONNECTED, NULL, ctx->callback_user_data[i]);
+                    ctx->callbacks[i](MQTT_MGR_EVENT_DISCONNECTED, NULL, ctx->callback_user_data[i]);
                 }
             }
             
@@ -120,7 +121,7 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
             if (ctx->config.auto_reconnect && !ctx->offline_mode) {
                 if (ctx->retry_count < ctx->config.max_retry_count) {
                     ctx->retry_count++;
-                    ctx->state = MQTT_STATE_CONNECTING;
+                    ctx->state = MQTT_MGR_STATE_CONNECTING;
                     ESP_LOGI(TAG, "Attempting to reconnect (attempt %d/%d)", 
                             ctx->retry_count, ctx->config.max_retry_count);
                 }
@@ -135,7 +136,7 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
                 .topic = event->topic,
                 .payload = event->data,
                 .payload_len = event->data_len,
-                .qos = MQTT_QOS_AT_MOST_ONCE, // QoS not available in event
+                .qos = MQTT_MGR_QOS_AT_MOST_ONCE, // QoS not available in event
                 .retain = false, // Retain flag not available in event
                 .message_id = event->msg_id
             };
@@ -143,7 +144,7 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
             // Notify callbacks
             for (int i = 0; i < MAX_MQTT_CALLBACKS; i++) {
                 if (ctx->callbacks[i] != NULL) {
-                    ctx->callbacks[i](MQTT_EVENT_DATA_RECEIVED, &message, ctx->callback_user_data[i]);
+                    ctx->callbacks[i](MQTT_MGR_EVENT_DATA_RECEIVED, &message, ctx->callback_user_data[i]);
                 }
             }
             break;
@@ -154,7 +155,7 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
             // Notify callbacks
             for (int i = 0; i < MAX_MQTT_CALLBACKS; i++) {
                 if (ctx->callbacks[i] != NULL) {
-                    ctx->callbacks[i](MQTT_EVENT_PUBLISHED, NULL, ctx->callback_user_data[i]);
+                    ctx->callbacks[i](MQTT_MGR_EVENT_PUBLISHED, NULL, ctx->callback_user_data[i]);
                 }
             }
             break;
@@ -222,7 +223,7 @@ static void create_esp_mqtt_config(struct mqtt_client_context* ctx, esp_mqtt_cli
  */
 static esp_err_t queue_message_for_offline(struct mqtt_client_context* ctx, 
                                           const char* topic, const char* data, 
-                                          size_t len, mqtt_qos_t qos, bool retain)
+                                          size_t len, mqtt_mgr_qos_t qos, bool retain)
 {
     // Check if queue is full
     if (ctx->queued_message_count >= MAX_QUEUED_MESSAGES) {
@@ -286,7 +287,7 @@ static esp_err_t queue_message_for_offline(struct mqtt_client_context* ctx,
  */
 static esp_err_t synchronize_queued_messages(struct mqtt_client_context* ctx)
 {
-    if (ctx->state != MQTT_STATE_CONNECTED) {
+    if (ctx->state != MQTT_MGR_STATE_CONNECTED) {
         ESP_LOGE(TAG, "Cannot synchronize messages: not connected to broker");
         return ESP_ERR_INVALID_STATE;
     }
@@ -296,7 +297,7 @@ static esp_err_t synchronize_queued_messages(struct mqtt_client_context* ctx)
     // Notify callbacks
     for (int i = 0; i < MAX_MQTT_CALLBACKS; i++) {
         if (ctx->callbacks[i] != NULL) {
-            ctx->callbacks[i](MQTT_EVENT_OFFLINE_SYNC_STARTED, NULL, ctx->callback_user_data[i]);
+            ctx->callbacks[i](MQTT_MGR_EVENT_OFFLINE_SYNC_STARTED, NULL, ctx->callback_user_data[i]);
         }
     }
     
@@ -338,7 +339,7 @@ static esp_err_t synchronize_queued_messages(struct mqtt_client_context* ctx)
     // Notify callbacks
     for (int i = 0; i < MAX_MQTT_CALLBACKS; i++) {
         if (ctx->callbacks[i] != NULL) {
-            ctx->callbacks[i](MQTT_EVENT_OFFLINE_SYNC_COMPLETED, NULL, ctx->callback_user_data[i]);
+            ctx->callbacks[i](MQTT_MGR_EVENT_OFFLINE_SYNC_COMPLETED, NULL, ctx->callback_user_data[i]);
         }
     }
     
@@ -381,7 +382,7 @@ esp_err_t mqtt_client_init(const mqtt_client_config_t* config, mqtt_client_handl
     ctx->config.use_tls = config->use_tls;
     
     // Initialize state
-    ctx->state = MQTT_STATE_DISCONNECTED;
+    ctx->state = MQTT_MGR_STATE_DISCONNECTED;
     ctx->offline_mode = false;
     ctx->retry_count = 0;
     ctx->queued_message_count = 0;
@@ -451,7 +452,7 @@ esp_err_t mqtt_client_deinit(mqtt_client_handle_t handle)
     }
     
     // Disconnect if connected
-    if (ctx->state == MQTT_STATE_CONNECTED) {
+    if (ctx->state == MQTT_MGR_STATE_CONNECTED) {
         esp_mqtt_client_disconnect(ctx->esp_mqtt_client);
     }
     
@@ -509,14 +510,14 @@ esp_err_t mqtt_client_connect(mqtt_client_handle_t handle, bool blocking)
     }
     
     // Set state to connecting
-    ctx->state = MQTT_STATE_CONNECTING;
+    ctx->state = MQTT_MGR_STATE_CONNECTING;
     ctx->retry_count = 0;
     
     // Start connection
     esp_err_t ret = esp_mqtt_client_start(ctx->esp_mqtt_client);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start MQTT client: %s", esp_err_to_name(ret));
-        ctx->state = MQTT_STATE_DISCONNECTED;
+        ctx->state = MQTT_MGR_STATE_DISCONNECTED;
         return ret;
     }
     
@@ -527,18 +528,18 @@ esp_err_t mqtt_client_connect(mqtt_client_handle_t handle, bool blocking)
         uint32_t wait_time = 0;
         const uint32_t check_interval = 100; // ms
         
-        while (ctx->state == MQTT_STATE_CONNECTING && 
+        while (ctx->state == MQTT_MGR_STATE_CONNECTING && 
                wait_time < ctx->config.connect_timeout_ms) {
             vTaskDelay(pdMS_TO_TICKS(check_interval));
             wait_time += check_interval;
         }
         
-        if (ctx->state == MQTT_STATE_CONNECTED) {
+        if (ctx->state == MQTT_MGR_STATE_CONNECTED) {
             ESP_LOGI(TAG, "Successfully connected to MQTT broker");
             return ESP_OK;
         } else {
             ESP_LOGE(TAG, "Failed to connect to MQTT broker");
-            ctx->state = MQTT_STATE_DISCONNECTED;
+            ctx->state = MQTT_MGR_STATE_DISCONNECTED;
             return ESP_FAIL;
         }
     }
@@ -563,14 +564,14 @@ esp_err_t mqtt_client_disconnect(mqtt_client_handle_t handle)
     }
     
     // Update state
-    ctx->state = MQTT_STATE_DISCONNECTED;
+    ctx->state = MQTT_MGR_STATE_DISCONNECTED;
     ctx->offline_mode = false;
     
     return ESP_OK;
 }
 
 esp_err_t mqtt_client_publish(mqtt_client_handle_t handle, const char* topic, const char* data, 
-                             size_t len, mqtt_qos_t qos, bool retain)
+                             size_t len, mqtt_mgr_qos_t qos, bool retain)
 {
     struct mqtt_client_context* ctx = (struct mqtt_client_context*)handle;
     
@@ -580,7 +581,7 @@ esp_err_t mqtt_client_publish(mqtt_client_handle_t handle, const char* topic, co
     }
     
     // If in offline mode or not connected, queue the message
-    if (ctx->offline_mode || ctx->state != MQTT_STATE_CONNECTED) {
+    if (ctx->offline_mode || ctx->state != MQTT_MGR_STATE_CONNECTED) {
         return queue_message_for_offline(ctx, topic, data, len, qos, retain);
     }
     
@@ -595,7 +596,7 @@ esp_err_t mqtt_client_publish(mqtt_client_handle_t handle, const char* topic, co
     return ESP_OK;
 }
 
-esp_err_t mqtt_client_subscribe(mqtt_client_handle_t handle, const char* topic, mqtt_qos_t qos)
+esp_err_t mqtt_client_subscribe(mqtt_client_handle_t handle, const char* topic, mqtt_mgr_qos_t qos)
 {
     struct mqtt_client_context* ctx = (struct mqtt_client_context*)handle;
     
@@ -604,7 +605,7 @@ esp_err_t mqtt_client_subscribe(mqtt_client_handle_t handle, const char* topic, 
         return ESP_ERR_INVALID_ARG;
     }
     
-    if (ctx->state != MQTT_STATE_CONNECTED) {
+    if (ctx->state != MQTT_MGR_STATE_CONNECTED) {
         ESP_LOGE(TAG, "Not connected to MQTT broker");
         return ESP_ERR_INVALID_STATE;
     }
@@ -629,7 +630,7 @@ esp_err_t mqtt_client_unsubscribe(mqtt_client_handle_t handle, const char* topic
         return ESP_ERR_INVALID_ARG;
     }
     
-    if (ctx->state != MQTT_STATE_CONNECTED) {
+    if (ctx->state != MQTT_MGR_STATE_CONNECTED) {
         ESP_LOGE(TAG, "Not connected to MQTT broker");
         return ESP_ERR_INVALID_STATE;
     }
@@ -656,12 +657,12 @@ esp_err_t mqtt_client_enter_offline_mode(mqtt_client_handle_t handle)
     
     // Set offline mode flag
     ctx->offline_mode = true;
-    ctx->state = MQTT_STATE_OFFLINE_QUEUING;
+    ctx->state = MQTT_MGR_STATE_OFFLINE_QUEUING;
     
     // Notify callbacks
     for (int i = 0; i < MAX_MQTT_CALLBACKS; i++) {
         if (ctx->callbacks[i] != NULL) {
-            ctx->callbacks[i](MQTT_EVENT_OFFLINE_QUEUING_STARTED, NULL, ctx->callback_user_data[i]);
+            ctx->callbacks[i](MQTT_MGR_EVENT_OFFLINE_QUEUING_STARTED, NULL, ctx->callback_user_data[i]);
         }
     }
     
@@ -682,7 +683,7 @@ esp_err_t mqtt_client_exit_offline_mode(mqtt_client_handle_t handle)
     ctx->offline_mode = false;
     
     // If connected, synchronize queued messages
-    if (ctx->state == MQTT_STATE_CONNECTED && ctx->queued_message_count > 0) {
+    if (ctx->state == MQTT_MGR_STATE_CONNECTED && ctx->queued_message_count > 0) {
         return synchronize_queued_messages(ctx);
     }
     
@@ -690,13 +691,13 @@ esp_err_t mqtt_client_exit_offline_mode(mqtt_client_handle_t handle)
     return ESP_OK;
 }
 
-mqtt_connection_state_t mqtt_client_get_state(mqtt_client_handle_t handle)
+mqtt_mgr_connection_state_t mqtt_client_get_state(mqtt_client_handle_t handle)
 {
     struct mqtt_client_context* ctx = (struct mqtt_client_context*)handle;
     
     if (ctx == NULL || !ctx->initialized) {
         ESP_LOGE(TAG, "Invalid MQTT client handle");
-        return MQTT_STATE_DISCONNECTED;
+        return MQTT_MGR_STATE_DISCONNECTED;
     }
     
     return ctx->state;
@@ -710,7 +711,7 @@ bool mqtt_client_is_connected(mqtt_client_handle_t handle)
         return false;
     }
     
-    return (ctx->state == MQTT_STATE_CONNECTED);
+    return (ctx->state == MQTT_MGR_STATE_CONNECTED);
 }
 
 esp_err_t mqtt_client_get_queued_message_count(mqtt_client_handle_t handle, uint32_t* count)
@@ -761,7 +762,7 @@ esp_err_t mqtt_client_clear_queued_messages(mqtt_client_handle_t handle)
     return ESP_OK;
 }
 
-esp_err_t mqtt_client_register_callback(mqtt_client_handle_t handle, mqtt_event_callback_t callback, void* user_data)
+esp_err_t mqtt_client_register_callback(mqtt_client_handle_t handle, mqtt_mgr_event_callback_t callback, void* user_data)
 {
     struct mqtt_client_context* ctx = (struct mqtt_client_context*)handle;
     
@@ -784,7 +785,7 @@ esp_err_t mqtt_client_register_callback(mqtt_client_handle_t handle, mqtt_event_
     return ESP_ERR_NO_MEM;
 }
 
-esp_err_t mqtt_client_unregister_callback(mqtt_client_handle_t handle, mqtt_event_callback_t callback)
+esp_err_t mqtt_client_unregister_callback(mqtt_client_handle_t handle, mqtt_mgr_event_callback_t callback)
 {
     struct mqtt_client_context* ctx = (struct mqtt_client_context*)handle;
     
@@ -807,29 +808,29 @@ esp_err_t mqtt_client_unregister_callback(mqtt_client_handle_t handle, mqtt_even
     return ESP_ERR_NOT_FOUND;
 }
 
-const char* mqtt_client_event_to_string(mqtt_event_t event)
+const char* mqtt_client_event_to_string(mqtt_mgr_event_t event)
 {
     switch (event) {
-        case MQTT_EVENT_CONNECTED:              return "CONNECTED";
-        case MQTT_EVENT_DISCONNECTED:           return "DISCONNECTED";
-        case MQTT_EVENT_CONNECTION_FAILED:      return "CONNECTION_FAILED";
-        case MQTT_EVENT_DATA_RECEIVED:          return "DATA_RECEIVED";
-        case MQTT_EVENT_PUBLISHED:              return "PUBLISHED";
-        case MQTT_EVENT_OFFLINE_QUEUING_STARTED: return "OFFLINE_QUEUING_STARTED";
-        case MQTT_EVENT_OFFLINE_SYNC_STARTED:   return "OFFLINE_SYNC_STARTED";
-        case MQTT_EVENT_OFFLINE_SYNC_COMPLETED: return "OFFLINE_SYNC_COMPLETED";
+        case MQTT_MGR_EVENT_CONNECTED:              return "CONNECTED";
+        case MQTT_MGR_EVENT_DISCONNECTED:           return "DISCONNECTED";
+        case MQTT_MGR_EVENT_CONNECTION_FAILED:      return "CONNECTION_FAILED";
+        case MQTT_MGR_EVENT_DATA_RECEIVED:          return "DATA_RECEIVED";
+        case MQTT_MGR_EVENT_PUBLISHED:              return "PUBLISHED";
+        case MQTT_MGR_EVENT_OFFLINE_QUEUING_STARTED: return "OFFLINE_QUEUING_STARTED";
+        case MQTT_MGR_EVENT_OFFLINE_SYNC_STARTED:   return "OFFLINE_SYNC_STARTED";
+        case MQTT_MGR_EVENT_OFFLINE_SYNC_COMPLETED: return "OFFLINE_SYNC_COMPLETED";
         default:                                return "UNKNOWN";
     }
 }
 
-const char* mqtt_client_state_to_string(mqtt_connection_state_t state)
+const char* mqtt_client_state_to_string(mqtt_mgr_connection_state_t state)
 {
     switch (state) {
-        case MQTT_STATE_DISCONNECTED:       return "DISCONNECTED";
-        case MQTT_STATE_CONNECTING:         return "CONNECTING";
-        case MQTT_STATE_CONNECTED:          return "CONNECTED";
-        case MQTT_STATE_CONNECTION_LOST:    return "CONNECTION_LOST";
-        case MQTT_STATE_OFFLINE_QUEUING:    return "OFFLINE_QUEUING";
+        case MQTT_MGR_STATE_DISCONNECTED:       return "DISCONNECTED";
+        case MQTT_MGR_STATE_CONNECTING:         return "CONNECTING";
+        case MQTT_MGR_STATE_CONNECTED:          return "CONNECTED";
+        case MQTT_MGR_STATE_CONNECTION_LOST:    return "CONNECTION_LOST";
+        case MQTT_MGR_STATE_OFFLINE_QUEUING:    return "OFFLINE_QUEUING";
         default:                            return "UNKNOWN";
     }
 }
